@@ -1,0 +1,1 @@
+module zabbix_agent_exporter
