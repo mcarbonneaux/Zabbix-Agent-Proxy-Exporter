@@ -31,6 +31,8 @@ func (c *Client) roundTrip(ctx context.Context, addr, key string) ([]byte, error
 	defer conn.Close()
 
 	deadline := time.Now().Add(c.timeout)
+	// SetDeadline enforces c.timeout independently of ctx; cancelling ctx
+	// mid-read will not abort the read early.
 	if err := conn.SetDeadline(deadline); err != nil {
 		return nil, fmt.Errorf("zabbixclient: set deadline: %w", err)
 	}
@@ -46,19 +48,25 @@ func (c *Client) roundTrip(ctx context.Context, addr, key string) ([]byte, error
 	return payload, nil
 }
 
+func checkNotSupported(key, addr string, payload []byte) error {
+	value := string(payload)
+	if strings.HasPrefix(value, "ZBX_NOTSUPPORTED") {
+		reason := strings.TrimPrefix(value, "ZBX_NOTSUPPORTED\x00")
+		return fmt.Errorf("zabbixclient: item %q not supported by %s: %s", key, addr, reason)
+	}
+	return nil
+}
+
 // GetItem requests key from the agent at addr and returns its raw string value.
 func (c *Client) GetItem(ctx context.Context, addr, key string) (string, error) {
 	payload, err := c.roundTrip(ctx, addr, key)
 	if err != nil {
 		return "", err
 	}
-
-	value := string(payload)
-	if strings.HasPrefix(value, "ZBX_NOTSUPPORTED") {
-		reason := strings.TrimPrefix(value, "ZBX_NOTSUPPORTED\x00")
-		return "", fmt.Errorf("zabbixclient: item %q not supported by %s: %s", key, addr, reason)
+	if err := checkNotSupported(key, addr, payload); err != nil {
+		return "", err
 	}
-	return value, nil
+	return string(payload), nil
 }
 
 // Discover requests a discovery key (e.g. vfs.fs.discovery) and returns
@@ -66,6 +74,9 @@ func (c *Client) GetItem(ctx context.Context, addr, key string) (string, error) 
 func (c *Client) Discover(ctx context.Context, addr, discoveryKey string) ([]map[string]string, error) {
 	payload, err := c.roundTrip(ctx, addr, discoveryKey)
 	if err != nil {
+		return nil, err
+	}
+	if err := checkNotSupported(discoveryKey, addr, payload); err != nil {
 		return nil, err
 	}
 

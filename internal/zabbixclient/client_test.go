@@ -109,3 +109,30 @@ func TestDiscoverParsesJSONEntities(t *testing.T) {
 		t.Fatalf("got %q, want %q", entities[1]["{#FSNAME}"], "/var")
 	}
 }
+
+func TestDiscoverReturnsErrorOnNotSupported(t *testing.T) {
+	addr := startFakeAgent(t, func(request string) []byte {
+		return []byte("ZBX_NOTSUPPORTED\x00Unsupported discovery key.")
+	})
+
+	client := New(2 * time.Second)
+	_, err := client.Discover(context.Background(), addr, "bogus.discovery")
+	if err == nil {
+		t.Fatal("expected error for unsupported discovery key, got nil")
+	}
+	if !strings.Contains(err.Error(), "not supported") {
+		t.Fatalf("expected 'not supported' in error, got: %v", err)
+	}
+}
+
+func TestDiscoverReturnsErrorOnMalformedJSON(t *testing.T) {
+	addr := startFakeAgent(t, func(request string) []byte {
+		return []byte("not valid json")
+	})
+
+	client := New(2 * time.Second)
+	_, err := client.Discover(context.Background(), addr, "vfs.fs.discovery")
+	if err == nil {
+		t.Fatal("expected error for malformed JSON, got nil")
+	}
+}
