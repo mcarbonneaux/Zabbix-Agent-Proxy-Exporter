@@ -64,7 +64,10 @@ type DiscoveredItem struct {
 	LabelField   string     `yaml:"label_field"`
 }
 
-// Group aggregates a list of hosts under a list of modules.
+// Group aggregates a list of hosts under a list of modules. Hosts listed
+// here are not required to also appear in Config.Hosts: a host with no
+// entry there simply has no port/timeout override and falls back to
+// Defaults.
 type Group struct {
 	Name    string   `yaml:"name"`
 	Hosts   []string `yaml:"hosts"`

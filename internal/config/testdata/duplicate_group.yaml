@@ -1,0 +1,19 @@
+server:
+  listen_addr: ":9290"
+defaults:
+  port: 10050
+  timeout: 5s
+modules:
+  linux:
+    items:
+      - key: "agent.ping"
+        metric: "zabbix_agent_ping"
+        type: gauge
+        help: "ping"
+groups:
+  - name: "dup"
+    hosts: ["srv-old-01"]
+    modules: ["linux"]
+  - name: "dup"
+    hosts: ["srv-old-02"]
+    modules: ["linux"]

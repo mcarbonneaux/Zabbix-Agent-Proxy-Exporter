@@ -69,3 +69,17 @@ func TestLoadReturnsErrorForMissingFile(t *testing.T) {
 		t.Fatal("expected error for missing file, got nil")
 	}
 }
+
+func TestLoadRejectsUnknownKey(t *testing.T) {
+	_, err := Load("testdata/unknown_key.yaml")
+	if err == nil {
+		t.Fatal("expected error for unknown top-level key (typo'd 'moduels'), got nil")
+	}
+}
+
+func TestLoadRejectsDuplicateGroupName(t *testing.T) {
+	_, err := Load("testdata/duplicate_group.yaml")
+	if err == nil {
+		t.Fatal("expected error for duplicate group name, got nil")
+	}
+}

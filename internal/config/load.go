@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 
@@ -15,7 +16,9 @@ func Load(path string) (*Config, error) {
 	}
 
 	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&cfg); err != nil {
 		return nil, fmt.Errorf("config: parse %s: %w", path, err)
 	}
 
@@ -38,7 +41,13 @@ func validate(cfg *Config) error {
 			}
 		}
 	}
+	seenGroupNames := make(map[string]bool)
 	for _, group := range cfg.Groups {
+		if seenGroupNames[group.Name] {
+			return fmt.Errorf("duplicate group name %q", group.Name)
+		}
+		seenGroupNames[group.Name] = true
+
 		for _, moduleName := range group.Modules {
 			if _, ok := cfg.Modules[moduleName]; !ok {
 				return fmt.Errorf("group %q references unknown module %q", group.Name, moduleName)
