@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"path/filepath"
 
+	"github.com/fsnotify/fsnotify"
 	"gopkg.in/yaml.v3"
 )
 
@@ -55,4 +57,54 @@ func validate(cfg *Config) error {
 		}
 	}
 	return nil
+}
+
+// Watch monitors path for changes and invokes onChange with the newly
+// loaded config whenever the file is modified. onChange receives a non-nil
+// error (and a nil config) if the new file fails to load or validate; the
+// caller is expected to keep using its last-known-good config in that case.
+// Watch returns a stop function that must be called to release the watcher.
+func Watch(path string, onChange func(cfg *Config, err error)) (stop func(), err error) {
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		return nil, fmt.Errorf("config: create watcher: %w", err)
+	}
+	if err := watcher.Add(filepath.Dir(path)); err != nil {
+		watcher.Close()
+		return nil, fmt.Errorf("config: watch %s: %w", path, err)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		absPath, _ := filepath.Abs(path)
+		for {
+			select {
+			case event, ok := <-watcher.Events:
+				if !ok {
+					return
+				}
+				eventAbsPath, _ := filepath.Abs(event.Name)
+				if eventAbsPath != absPath {
+					continue
+				}
+				if event.Op&(fsnotify.Write|fsnotify.Create) == 0 {
+					continue
+				}
+				cfg, loadErr := Load(path)
+				onChange(cfg, loadErr)
+			case _, ok := <-watcher.Errors:
+				if !ok {
+					return
+				}
+			case <-done:
+				return
+			}
+		}
+	}()
+
+	stop = func() {
+		close(done)
+		watcher.Close()
+	}
+	return stop, nil
 }
