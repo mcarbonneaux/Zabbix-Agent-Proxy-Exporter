@@ -2,6 +2,7 @@ package zabbixproto
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"io"
 	"strings"
@@ -46,6 +47,39 @@ func TestReadFrameHandlesTruncatedHeader(t *testing.T) {
 	}
 	if !errors.Is(err, io.ErrUnexpectedEOF) && !errors.Is(err, io.EOF) {
 		t.Fatalf("expected EOF-related error, got: %v", err)
+	}
+}
+
+func TestReadFrameRejectsOversizedDeclaredLength(t *testing.T) {
+	header := make([]byte, headerLen)
+	copy(header[0:4], "ZBXD")
+	header[4] = 0x01
+	binary.LittleEndian.PutUint32(header[5:9], maxPayloadLen+1)
+	// No payload bytes follow — ReadFrame must reject based on the
+	// declared length alone, before attempting to read any payload.
+	buf := bytes.NewBuffer(header)
+
+	_, err := ReadFrame(buf)
+	if err == nil {
+		t.Fatal("expected error for oversized declared length, got nil")
+	}
+	if !strings.Contains(err.Error(), "exceeds max") {
+		t.Fatalf("expected error mentioning 'exceeds max', got: %v", err)
+	}
+}
+
+func TestWriteFrameThenReadFrameRoundTripEmptyPayload(t *testing.T) {
+	var buf bytes.Buffer
+	if err := WriteFrame(&buf, []byte{}); err != nil {
+		t.Fatalf("WriteFrame returned error: %v", err)
+	}
+
+	got, err := ReadFrame(&buf)
+	if err != nil {
+		t.Fatalf("ReadFrame returned error: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("got payload %q, want empty", got)
 	}
 }
 

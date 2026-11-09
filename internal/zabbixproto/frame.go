@@ -7,9 +7,10 @@ import (
 )
 
 const (
-	magic        = "ZBXD"
-	headerLen    = 13 // 4 (magic) + 1 (flags) + 4 (datalen) + 4 (reserved)
-	flagResponse = 0x01
+	magic         = "ZBXD"
+	headerLen     = 13 // 4 (magic) + 1 (flags) + 4 (datalen) + 4 (reserved)
+	flagResponse  = 0x01
+	maxPayloadLen = 128 * 1024 * 1024 // matches Zabbix's own default frame size cap
 )
 
 // WriteFrame writes payload wrapped in the Zabbix ZBXD header to w.
@@ -49,6 +50,9 @@ func ReadFrame(r io.Reader) ([]byte, error) {
 		return nil, fmt.Errorf("zabbixproto: bad magic %q, want %q", header[0:4], magic)
 	}
 	dataLen := binary.LittleEndian.Uint32(header[5:9])
+	if dataLen > maxPayloadLen {
+		return nil, fmt.Errorf("zabbixproto: declared payload length %d exceeds max %d", dataLen, maxPayloadLen)
+	}
 
 	payload := make([]byte, dataLen)
 	if _, err := io.ReadFull(r, payload); err != nil {
