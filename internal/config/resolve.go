@@ -21,8 +21,10 @@ type ResolvedTarget struct {
 // the result is the union of modules from every group that lists target.
 //
 // Port/timeout resolution cascades: Defaults -> Hosts[target] override ->
-// urlPort/urlTimeout (if non-zero).
-func Resolve(cfg *Config, target string, urlModules []string, urlPort int, urlTimeout time.Duration) (ResolvedTarget, error) {
+// urlPort/urlTimeout. urlPort and urlTimeout are pointers so a caller can
+// distinguish "not provided" (nil) from an explicit value (including the
+// zero value) provided via the URL.
+func Resolve(cfg *Config, target string, urlModules []string, urlPort *int, urlTimeout *time.Duration) (ResolvedTarget, error) {
 	modules := urlModules
 	if len(modules) == 0 {
 		modules = modulesFromGroups(cfg, target)
@@ -41,11 +43,11 @@ func Resolve(cfg *Config, target string, urlModules []string, urlPort int, urlTi
 			timeout = *host.Timeout
 		}
 	}
-	if urlPort != 0 {
-		port = urlPort
+	if urlPort != nil {
+		port = *urlPort
 	}
-	if urlTimeout != 0 {
-		timeout = urlTimeout
+	if urlTimeout != nil {
+		timeout = *urlTimeout
 	}
 
 	return ResolvedTarget{
