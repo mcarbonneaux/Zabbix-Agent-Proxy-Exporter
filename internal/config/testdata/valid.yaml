@@ -1,0 +1,44 @@
+server:
+  listen_addr: ":9290"
+  log_level: "debug"
+  log_encoding: "console"
+
+defaults:
+  port: 10050
+  timeout: 5s
+
+hosts:
+  srv-old-01: {}
+  srv-old-02:
+    port: 10150
+    timeout: 10s
+
+modules:
+  linux:
+    items:
+      - key: "agent.ping"
+        metric: "zabbix_agent_ping"
+        type: gauge
+        help: "Agent reachability (1=up)"
+    discovered_items:
+      - discovery_key: "vfs.fs.discovery"
+        value_key: "vfs.fs.size[{#FSNAME},pfree]"
+        metric: "zabbix_fs_free_percent"
+        type: gauge
+        help: "Free space percent per filesystem"
+        label_name: "mountpoint"
+        label_field: "{#FSNAME}"
+  mysql:
+    items:
+      - key: "mysql.ping"
+        metric: "zabbix_mysql_ping"
+        type: gauge
+        help: "MySQL reachability"
+
+groups:
+  - name: "tous-linux"
+    hosts: ["srv-old-01", "srv-old-02"]
+    modules: ["linux"]
+  - name: "base-de-donnees"
+    hosts: ["srv-old-02"]
+    modules: ["mysql"]

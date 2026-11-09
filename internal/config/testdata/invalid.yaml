@@ -1,0 +1,7 @@
+modules:
+  linux:
+    items:
+      - key: "agent.ping"
+        metric: "zabbix_agent_ping"
+        type: "not-a-real-type"
+        help: "bad type"
