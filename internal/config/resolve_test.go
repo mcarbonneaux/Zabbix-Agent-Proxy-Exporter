@@ -117,3 +117,20 @@ func TestResolveUsesURLModulesWhenTargetInNoGroups(t *testing.T) {
 		t.Fatalf("got modules %v, want exactly [linux]", resolved.Modules)
 	}
 }
+
+func TestResolveURLZeroValuesOverrideHostOverride(t *testing.T) {
+	cfg := testConfig()
+
+	zeroPort := 0
+	zeroTimeout := time.Duration(0)
+	resolved, err := Resolve(cfg, "srv-old-02", nil, &zeroPort, &zeroTimeout)
+	if err != nil {
+		t.Fatalf("Resolve returned error: %v", err)
+	}
+	if resolved.Port != 0 {
+		t.Fatalf("got port %d, want explicit URL override 0", resolved.Port)
+	}
+	if resolved.Timeout != 0 {
+		t.Fatalf("got timeout %v, want explicit URL override 0", resolved.Timeout)
+	}
+}
