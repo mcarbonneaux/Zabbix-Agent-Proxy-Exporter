@@ -60,15 +60,31 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
+	serverErr := make(chan error, 1)
 	go func() {
 		logger.Info("starting server", zap.String("listen_addr", cfg.Server.ListenAddr))
 		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logger.Error("server failed", zap.Error(err))
+			serverErr <- err
+			return
 		}
+		serverErr <- nil
 	}()
 
-	<-ctx.Done()
-	logger.Info("shutting down")
+	select {
+	case err := <-serverErr:
+		if err != nil {
+			logger.Error("server failed to start or serve", zap.Error(err))
+			os.Exit(1)
+		}
+		// err == nil means ListenAndServe returned http.ErrServerClosed,
+		// which only happens after Shutdown was already called elsewhere;
+		// this path is not expected to be reached in normal operation
+		// since nothing calls Shutdown before ctx is done, but is handled
+		// defensively rather than left to fall through.
+		return
+	case <-ctx.Done():
+		logger.Info("shutting down")
+	}
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
