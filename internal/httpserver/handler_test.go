@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -118,4 +119,43 @@ func TestHealthzReturns200(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("got status %d, want 200", rec.Code)
 	}
+}
+
+func TestServerHandlesConcurrentSetConfigAndRequests(t *testing.T) {
+	addr := startFakeAgent(t)
+	host, _, _ := net.SplitHostPort(addr)
+	cfg := testConfigForAddr(addr)
+
+	srv := New(cfg, zap.NewNop())
+	handler := srv.Handler()
+
+	var wg sync.WaitGroup
+
+	// One goroutine repeatedly swaps the config (same content, just to
+	// exercise the write path concurrently with readers).
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < 50; i++ {
+			srv.SetConfig(testConfigForAddr(addr))
+		}
+	}()
+
+	// Several goroutines repeatedly hit /metrics concurrently.
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 20; j++ {
+				req := httptest.NewRequest(http.MethodGet, "/metrics?target="+host, nil)
+				rec := httptest.NewRecorder()
+				handler.ServeHTTP(rec, req)
+				if rec.Code != http.StatusOK {
+					t.Errorf("got status %d, want 200", rec.Code)
+				}
+			}
+		}()
+	}
+
+	wg.Wait()
 }
