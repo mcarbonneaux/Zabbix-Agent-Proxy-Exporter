@@ -54,13 +54,13 @@ modules:
   # relying entirely on custom UserParameter keys defined in the agent's
   # own config (see configs/zabbix_agentd.solaris.conf.example). Agents
   # this old don't support native discovery keys (vfs.fs.discovery,
-  # net.if.discovery, ...), so this module only maps UserParameter keys
-  # that return a single numeric value. The custom "list" UserParameters
-  # in that example config (listif_solaris, listfs_solaris,
-  # listdisk_solaris) return a plain newline-separated list of names, not
-  # the JSON LLD shape the exporter's discovered_items expects, so they
-  # cannot be mapped as either items or discovered_items and are
-  # intentionally omitted here.
+  # net.if.discovery, ...); the custom "list" UserParameters in that
+  # example config (listif_solaris, listfs_solaris, listdisk_solaris)
+  # return a plain newline-separated list of names instead, which
+  # line_list_items turns into a presence (1) series per line/entity, each
+  # labeled with that line's text — there's no second UserParameter key
+  # per entity on this agent, so unlike discovered_items there's no value
+  # to query beyond presence.
   solaris:
     items:
       - key: "agent.ping"
@@ -87,6 +87,19 @@ modules:
         metric: "zabbix_tcp_ports_used"
         type: gauge
         help: "Number of established TCP connections (UserParameter: netstat -an -P tcp)"
+    line_list_items:
+      - key: "listfs_solaris"
+        metric: "zabbix_fs_present"
+        help: "Filesystem is present (UserParameter: df -k)"
+        label_name: "mountpoint"
+      - key: "listif_solaris"
+        metric: "zabbix_net_if_present"
+        help: "Network interface is present (UserParameter: ifconfig -a)"
+        label_name: "interface"
+      - key: "listdisk_solaris"
+        metric: "zabbix_disk_present"
+        help: "Disk device is present (UserParameter: iostat -En)"
+        label_name: "device"
 
 groups:
   - name: "tous-linux"

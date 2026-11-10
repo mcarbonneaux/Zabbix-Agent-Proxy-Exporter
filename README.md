@@ -334,6 +334,48 @@ one discovered item is skipped (logged + counted in
 `zabbix_item_errors_total`) without failing the rest of the scrape — see
 [Meta-metrics](#meta-metrics).
 
+### Pre-LLD agents: `line_list_items`
+
+Zabbix LLD was only introduced in Zabbix 2.0 (2012). Agents older than
+that (some Zabbix 1.8.x deployments on Solaris/AIX/HPUX are still found in
+the wild) can't return the JSON shape above at all — but it was still
+common to define custom `UserParameter` scripts that enumerate entities as
+**plain text, one per line**, for a human to read in a Zabbix 1.8 trigger.
+For example, a `UserParameter=listfs_solaris,df -k | ...` key might return:
+
+```
+/
+/var
+/home
+```
+
+`line_list_items` turns a response like that into one Prometheus series
+per non-empty line, each with value `1` (presence) and the line's text as
+a label — there is no second key to query per entity on agents this old
+(unlike `discovered_items`' `value_key`), so presence is all that can be
+reported:
+
+```yaml
+line_list_items:
+  - key: "listfs_solaris"
+    metric: "zabbix_fs_present"
+    help: "Filesystem is present"
+    label_name: "mountpoint"
+```
+
+```
+zabbix_fs_present{mountpoint="/"} 1
+zabbix_fs_present{mountpoint="/var"} 1
+zabbix_fs_present{mountpoint="/home"} 1
+```
+
+This is primarily useful to detect an entity disappearing (a filesystem or
+network interface no longer reported) rather than to track a numeric value
+per entity — pair it with `items` (see
+[`configs/config.example.yaml`](configs/config.example.yaml)'s `solaris`
+module) for the actual numeric metrics that key's agent *can* expose
+one-value-at-a-time (CPU, memory, TCP stats, ...).
+
 ## Assigning modules to hosts (groups)
 
 **Groups** are what actually connects hosts to modules. A group lists some
