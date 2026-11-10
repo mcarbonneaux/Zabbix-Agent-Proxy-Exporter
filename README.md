@@ -1,4 +1,4 @@
-# zabbix_agent_exporter
+# Zabbix Agent Proxy Exporter
 
 Prometheus exporter that proxies scrapes to legacy Zabbix passive agents.
 It lets a fleet of old Zabbix agents (on hosts where `node_exporter` isn't
