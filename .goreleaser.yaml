@@ -66,8 +66,8 @@ changelog:
       - "^test:"
 
 release:
-  github:
-    owner: mcarbonneaux
-    name: zabbix_agent_exporter
+  # No explicit owner/name here on purpose: GoReleaser infers the GitHub
+  # repo from the git remote at release time, so renaming the repo on
+  # GitHub doesn't require touching this file.
   draft: false
   prerelease: auto
