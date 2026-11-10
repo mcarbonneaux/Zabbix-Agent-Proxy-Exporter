@@ -1,0 +1,56 @@
+# configs/config.example.yaml
+server:
+  listen_addr: ":9290"
+  log_level: "info"
+  log_encoding: "console"
+
+defaults:
+  port: 10050
+  timeout: 5s
+
+hosts:
+  srv-old-01: {}
+
+modules:
+  linux:
+    items:
+      - key: "agent.ping"
+        metric: "zabbix_agent_ping"
+        type: gauge
+        help: "Agent reachability (1=up)"
+      - key: "system.cpu.load[,avg1]"
+        metric: "zabbix_cpu_load1"
+        type: gauge
+        help: "CPU load average 1m"
+      - key: "system.uptime"
+        metric: "zabbix_uptime_seconds"
+        type: gauge
+        help: "System uptime in seconds"
+      - key: "vm.memory.size[available]"
+        metric: "zabbix_memory_available_bytes"
+        type: gauge
+        help: "Available memory in bytes"
+      - key: "vm.memory.size[total]"
+        metric: "zabbix_memory_total_bytes"
+        type: gauge
+        help: "Total memory in bytes"
+    discovered_items:
+      - discovery_key: "vfs.fs.discovery"
+        value_key: "vfs.fs.size[{#FSNAME},pfree]"
+        metric: "zabbix_fs_free_percent"
+        type: gauge
+        help: "Free space percent per filesystem"
+        label_name: "mountpoint"
+        label_field: "{#FSNAME}"
+      - discovery_key: "net.if.discovery"
+        value_key: "net.if.in[{#IFNAME}]"
+        metric: "zabbix_net_if_in_bytes"
+        type: counter
+        help: "Network bytes received per interface"
+        label_name: "interface"
+        label_field: "{#IFNAME}"
+
+groups:
+  - name: "tous-linux"
+    hosts: ["srv-old-01"]
+    modules: ["linux"]
