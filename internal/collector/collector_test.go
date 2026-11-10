@@ -146,4 +146,45 @@ zabbix_scrape_success 1
 	}
 }
 
+func TestNewDefaultsNilLoggerToNoop(t *testing.T) {
+	addr := startFakeAgent(t, map[string][]byte{
+		"agent.ping": []byte("1"),
+	})
+
+	client := zabbixclient.New(2 * time.Second)
+	col := New(client, testModuleConfig(), []string{"linux"}, addr, nil)
+
+	reg := prometheus.NewRegistry()
+	reg.MustRegister(col)
+
+	if _, err := reg.Gather(); err != nil {
+		t.Fatalf("Gather returned error with nil logger: %v", err)
+	}
+}
+
+func TestCollectEmitsOneMetricPerDiscoveredEntity(t *testing.T) {
+	addr := startFakeAgent(t, map[string][]byte{
+		"agent.ping":              []byte("1"),
+		"vfs.fs.discovery":        []byte(`[{"{#FSNAME}":"/"},{"{#FSNAME}":"/var"}]`),
+		"vfs.fs.size[/,pfree]":    []byte("42.5"),
+		"vfs.fs.size[/var,pfree]": []byte("17.25"),
+	})
+
+	client := zabbixclient.New(2 * time.Second)
+	col := New(client, testModuleConfig(), []string{"linux"}, addr, zap.NewNop())
+
+	reg := prometheus.NewRegistry()
+	reg.MustRegister(col)
+
+	expected := `
+# HELP zabbix_fs_free_percent free pct
+# TYPE zabbix_fs_free_percent gauge
+zabbix_fs_free_percent{mountpoint="/"} 42.5
+zabbix_fs_free_percent{mountpoint="/var"} 17.25
+`
+	if err := testutil.GatherAndCompare(reg, strings.NewReader(expected), "zabbix_fs_free_percent"); err != nil {
+		t.Fatalf("unexpected metrics: %v", err)
+	}
+}
+
 var _ = context.Background // keep context import if unused by later edits

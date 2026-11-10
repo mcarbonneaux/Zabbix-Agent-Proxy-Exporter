@@ -31,8 +31,12 @@ type ZabbixCollector struct {
 }
 
 // New builds a collector for one scrape of addr using the given modules,
-// looked up by name in cfg.Modules.
+// looked up by name in cfg.Modules. If logger is nil, a no-op logger is
+// used instead of panicking on the first Warn call.
 func New(client zabbixQuerier, cfg *config.Config, modules []string, addr string, logger *zap.Logger) *ZabbixCollector {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
 	return &ZabbixCollector{client: client, cfg: cfg, modules: modules, addr: addr, logger: logger}
 }
 
