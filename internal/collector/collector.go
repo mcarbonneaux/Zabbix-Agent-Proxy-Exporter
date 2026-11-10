@@ -4,6 +4,7 @@ package collector
 import (
 	"context"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -104,6 +105,28 @@ func (c *ZabbixCollector) Collect(ch chan<- prometheus.Metric) {
 					continue
 				}
 				c.emitValue(ch, di.Metric, di.Help, di.Type, value, []string{di.LabelName}, []string{labelValue})
+			}
+		}
+
+		for _, lli := range module.LineListItems {
+			value, err := c.client.GetItem(ctx, c.addr, lli.Key)
+			if err != nil {
+				c.logger.Warn("line-list item query failed", zap.String("item", lli.Key), zap.Error(err))
+				itemErrors[lli.Key]++
+				if firstContact {
+					success = 0
+				}
+				continue
+			}
+			firstContact = false
+
+			desc := prometheus.NewDesc(lli.Metric, lli.Help, []string{lli.LabelName}, nil)
+			for _, line := range strings.Split(value, "\n") {
+				line = strings.TrimSpace(line)
+				if line == "" {
+					continue
+				}
+				ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, 1, line)
 			}
 		}
 	}

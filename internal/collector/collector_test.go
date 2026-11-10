@@ -187,4 +187,123 @@ zabbix_fs_free_percent{mountpoint="/var"} 17.25
 	}
 }
 
+func TestCollectEmitsOneMetricPerLineListEntry(t *testing.T) {
+	addr := startFakeAgent(t, map[string][]byte{
+		"listfs_solaris": []byte("/\n/var\n/home\n"),
+	})
+
+	cfg := &config.Config{
+		Modules: map[string]config.Module{
+			"solaris": {
+				LineListItems: []config.LineListItem{
+					{
+						Key:       "listfs_solaris",
+						Metric:    "zabbix_fs_present",
+						Help:      "Filesystem is present",
+						LabelName: "mountpoint",
+					},
+				},
+			},
+		},
+	}
+
+	client := zabbixclient.New(2 * time.Second)
+	col := New(client, cfg, []string{"solaris"}, addr, zap.NewNop())
+
+	reg := prometheus.NewRegistry()
+	reg.MustRegister(col)
+
+	expected := `
+# HELP zabbix_fs_present Filesystem is present
+# TYPE zabbix_fs_present gauge
+zabbix_fs_present{mountpoint="/"} 1
+zabbix_fs_present{mountpoint="/var"} 1
+zabbix_fs_present{mountpoint="/home"} 1
+`
+	if err := testutil.GatherAndCompare(reg, strings.NewReader(expected), "zabbix_fs_present"); err != nil {
+		t.Fatalf("unexpected metrics: %v", err)
+	}
+}
+
+func TestCollectSkipsEmptyLinesInLineListItem(t *testing.T) {
+	addr := startFakeAgent(t, map[string][]byte{
+		"listfs_solaris": []byte("/\n\n/var\n\n"),
+	})
+
+	cfg := &config.Config{
+		Modules: map[string]config.Module{
+			"solaris": {
+				LineListItems: []config.LineListItem{
+					{
+						Key:       "listfs_solaris",
+						Metric:    "zabbix_fs_present",
+						Help:      "Filesystem is present",
+						LabelName: "mountpoint",
+					},
+				},
+			},
+		},
+	}
+
+	client := zabbixclient.New(2 * time.Second)
+	col := New(client, cfg, []string{"solaris"}, addr, zap.NewNop())
+
+	reg := prometheus.NewRegistry()
+	reg.MustRegister(col)
+
+	expected := `
+# HELP zabbix_fs_present Filesystem is present
+# TYPE zabbix_fs_present gauge
+zabbix_fs_present{mountpoint="/"} 1
+zabbix_fs_present{mountpoint="/var"} 1
+`
+	if err := testutil.GatherAndCompare(reg, strings.NewReader(expected), "zabbix_fs_present"); err != nil {
+		t.Fatalf("unexpected metrics: %v", err)
+	}
+}
+
+func TestCollectLineListItemFailureCountsAsItemError(t *testing.T) {
+	addr := startFakeAgent(t, map[string][]byte{
+		"agent.ping": []byte("1"),
+		// listfs_solaris intentionally not stubbed -> returns ZBX_NOTSUPPORTED
+	})
+
+	cfg := &config.Config{
+		Modules: map[string]config.Module{
+			"solaris": {
+				Items: []config.Item{
+					{Key: "agent.ping", Metric: "zabbix_agent_ping", Type: config.MetricTypeGauge, Help: "ping"},
+				},
+				LineListItems: []config.LineListItem{
+					{
+						Key:       "listfs_solaris",
+						Metric:    "zabbix_fs_present",
+						Help:      "Filesystem is present",
+						LabelName: "mountpoint",
+					},
+				},
+			},
+		},
+	}
+
+	client := zabbixclient.New(2 * time.Second)
+	col := New(client, cfg, []string{"solaris"}, addr, zap.NewNop())
+
+	reg := prometheus.NewRegistry()
+	reg.MustRegister(col)
+
+	expected := `
+# HELP zabbix_agent_ping ping
+# TYPE zabbix_agent_ping gauge
+zabbix_agent_ping 1
+# HELP zabbix_scrape_success scrape_success
+# TYPE zabbix_scrape_success gauge
+zabbix_scrape_success 1
+`
+	if err := testutil.GatherAndCompare(reg, strings.NewReader(expected),
+		"zabbix_agent_ping", "zabbix_scrape_success", "zabbix_fs_present"); err != nil {
+		t.Fatalf("unexpected metrics: %v", err)
+	}
+}
+
 var _ = context.Background // keep context import if unused by later edits

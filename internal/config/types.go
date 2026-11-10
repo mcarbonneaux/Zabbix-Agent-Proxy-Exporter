@@ -38,10 +38,12 @@ type HostConfig struct {
 	Timeout *time.Duration `yaml:"timeout"`
 }
 
-// Module is a named set of item mappings (simple and LLD-discovered).
+// Module is a named set of item mappings (simple, LLD-discovered, and
+// plain-text-line-enumerated).
 type Module struct {
 	Items           []Item           `yaml:"items"`
 	DiscoveredItems []DiscoveredItem `yaml:"discovered_items"`
+	LineListItems   []LineListItem   `yaml:"line_list_items"`
 }
 
 // Item maps one simple Zabbix item key to one Prometheus metric.
@@ -62,6 +64,21 @@ type DiscoveredItem struct {
 	Help         string     `yaml:"help"`
 	LabelName    string     `yaml:"label_name"`
 	LabelField   string     `yaml:"label_field"`
+}
+
+// LineListItem maps a Zabbix item key whose response is a plain,
+// newline-separated list of entries (not JSON LLD) to one Prometheus
+// series per non-empty line, each with value 1 and the line's text as a
+// label. This supports legacy agents (pre-2.0, before Zabbix LLD existed)
+// whose UserParameter scripts enumerate entities as plain text — e.g. one
+// filesystem path per line — with no second key to query per entity, so
+// unlike DiscoveredItem there is no ValueKey: presence (1) is all that can
+// be reported.
+type LineListItem struct {
+	Key       string `yaml:"key"`
+	Metric    string `yaml:"metric"`
+	Help      string `yaml:"help"`
+	LabelName string `yaml:"label_name"`
 }
 
 // Group aggregates a list of hosts under a list of modules. Hosts listed
