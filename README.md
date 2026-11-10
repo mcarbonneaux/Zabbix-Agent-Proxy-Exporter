@@ -83,9 +83,22 @@ flowchart TD
     Client --> Proto
 ```
 
-## Build
+## Install
+
+**Pre-built binaries:** download the archive for your platform from the
+[Releases](https://github.com/mcarbonneaux/zabbix_agent_exporter/releases)
+page — each release publishes `linux` (amd64, 386, arm64, armv7), `darwin`
+(amd64, arm64), and `windows` (amd64) builds, each bundled with the README,
+LICENSE, and the example config, plus a `checksums.txt` to verify the
+download.
+
+**Build from source:**
 
     go build -o bin/zabbix_agent_exporter ./cmd/zabbix_agent_exporter
+
+Check the binary's build info at any time with:
+
+    ./bin/zabbix_agent_exporter -version
 
 ## Run
 
