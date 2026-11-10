@@ -402,6 +402,81 @@ queried:
 - `zabbix_item_errors_total{item="..."}` (counter) — one series per item
   key that failed during this scrape, with its failure count.
 
+## Running as a systemd service
+
+The binary is a single long-running process with no external runtime
+dependencies, so it fits a plain systemd unit — no container required.
+
+1. Build and install the binary and config:
+
+       go build -o /usr/local/bin/zabbix_agent_exporter ./cmd/zabbix_agent_exporter
+       sudo mkdir -p /etc/zabbix_agent_exporter
+       sudo cp configs/config.example.yaml /etc/zabbix_agent_exporter/config.yaml
+
+2. Create a dedicated, unprivileged user to run the service (it only needs
+   outbound TCP access to the Zabbix agents and a listening HTTP port, no
+   special permissions):
+
+       sudo useradd --system --no-create-home --shell /usr/sbin/nologin zabbix-exporter
+       sudo chown -R zabbix-exporter:zabbix-exporter /etc/zabbix_agent_exporter
+
+3. Create `/etc/systemd/system/zabbix_agent_exporter.service`:
+
+   ```ini
+   [Unit]
+   Description=Zabbix agent to Prometheus exporter
+   After=network-online.target
+   Wants=network-online.target
+
+   [Service]
+   Type=simple
+   User=zabbix-exporter
+   Group=zabbix-exporter
+   ExecStart=/usr/local/bin/zabbix_agent_exporter -config /etc/zabbix_agent_exporter/config.yaml
+   Restart=on-failure
+   RestartSec=5s
+
+   # Optional hardening — safe because the process only needs network
+   # access and read access to its own config file.
+   NoNewPrivileges=true
+   ProtectSystem=strict
+   ProtectHome=true
+   PrivateTmp=true
+
+   [Install]
+   WantedBy=multi-user.target
+   ```
+
+4. Enable and start it:
+
+       sudo systemctl daemon-reload
+       sudo systemctl enable --now zabbix_agent_exporter
+
+5. Check it's up and check logs:
+
+       systemctl status zabbix_agent_exporter
+       journalctl -u zabbix_agent_exporter -f
+
+Editing `/etc/zabbix_agent_exporter/config.yaml` (adding a host, a module,
+a group, ...) does **not** require `systemctl restart` — the running
+process picks up the change automatically via its
+[hot-reload](#configuration-hot-reload). A restart is only needed to apply
+a changed `-config` path, listen address, or log settings.
+
+To point at a different config file without editing the unit file, use a
+drop-in override instead of editing the unit directly:
+
+    sudo systemctl edit zabbix_agent_exporter
+
+```ini
+[Service]
+ExecStart=
+ExecStart=/usr/local/bin/zabbix_agent_exporter -config /etc/zabbix_agent_exporter/other-config.yaml
+```
+
+(The empty `ExecStart=` line is required to clear the original `ExecStart`
+before setting the new one — systemd appends to `ExecStart` otherwise.)
+
 ## License
 
 GPLv3 — see [LICENSE](LICENSE).
