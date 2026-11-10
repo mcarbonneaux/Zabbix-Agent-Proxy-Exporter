@@ -50,6 +50,44 @@ modules:
         label_name: "interface"
         label_field: "{#IFNAME}"
 
+  # Example module for a legacy Zabbix agent (v1.8.x, pre-LLD) on Solaris,
+  # relying entirely on custom UserParameter keys defined in the agent's
+  # own config (see configs/zabbix_agentd.solaris.conf.example). Agents
+  # this old don't support native discovery keys (vfs.fs.discovery,
+  # net.if.discovery, ...), so this module only maps UserParameter keys
+  # that return a single numeric value. The custom "list" UserParameters
+  # in that example config (listif_solaris, listfs_solaris,
+  # listdisk_solaris) return a plain newline-separated list of names, not
+  # the JSON LLD shape the exporter's discovered_items expects, so they
+  # cannot be mapped as either items or discovered_items and are
+  # intentionally omitted here.
+  solaris:
+    items:
+      - key: "agent.ping"
+        metric: "zabbix_agent_ping"
+        type: gauge
+        help: "Agent reachability (1=up)"
+      - key: "cpu.global"
+        metric: "zabbix_cpu_usage_percent"
+        type: gauge
+        help: "CPU usage percent (UserParameter: sar -u)"
+      - key: "memory.used"
+        metric: "zabbix_memory_used_bytes"
+        type: gauge
+        help: "Used memory in bytes (UserParameter: prtconf/vmstat)"
+      - key: "avg.rtm"
+        metric: "zabbix_tcp_retransmit_percent"
+        type: gauge
+        help: "TCP retransmit percent (UserParameter: netstat -s -P tcp)"
+      - key: "net.pkt.rtm"
+        metric: "zabbix_tcp_retransmit_bytes_total"
+        type: counter
+        help: "TCP retransmitted bytes (UserParameter: netstat -s -P tcp)"
+      - key: "num.port.used"
+        metric: "zabbix_tcp_ports_used"
+        type: gauge
+        help: "Number of established TCP connections (UserParameter: netstat -an -P tcp)"
+
 groups:
   - name: "tous-linux"
     hosts: ["srv-old-01"]
