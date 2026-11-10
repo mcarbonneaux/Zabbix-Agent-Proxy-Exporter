@@ -61,9 +61,15 @@ func validate(cfg *Config) error {
 
 // Watch monitors path for changes and invokes onChange with the newly
 // loaded config whenever the file is modified. onChange receives a non-nil
-// error (and a nil config) if the new file fails to load or validate; the
-// caller is expected to keep using its last-known-good config in that case.
-// Watch returns a stop function that must be called to release the watcher.
+// error (and a nil config) if the new file fails to load or validate, or if
+// the underlying watcher itself reports an error; the caller is expected to
+// keep using its last-known-good config in that case. A single logical save
+// (e.g. an editor's write-temp-then-rename sequence) may trigger onChange
+// more than once, including a transient call with a spurious error if an
+// intermediate filesystem state is momentarily unparseable — callers must
+// tolerate this rather than treating every error call as actionable.
+// Watch returns a stop function that releases the watcher; stop does not
+// wait for any in-flight onChange call to finish before returning.
 func Watch(path string, onChange func(cfg *Config, err error)) (stop func(), err error) {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
@@ -87,15 +93,16 @@ func Watch(path string, onChange func(cfg *Config, err error)) (stop func(), err
 				if eventAbsPath != absPath {
 					continue
 				}
-				if event.Op&(fsnotify.Write|fsnotify.Create) == 0 {
+				if event.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Rename|fsnotify.Remove) == 0 {
 					continue
 				}
 				cfg, loadErr := Load(path)
 				onChange(cfg, loadErr)
-			case _, ok := <-watcher.Errors:
+			case watchErr, ok := <-watcher.Errors:
 				if !ok {
 					return
 				}
+				onChange(nil, fmt.Errorf("config: watcher error for %s: %w", path, watchErr))
 			case <-done:
 				return
 			}

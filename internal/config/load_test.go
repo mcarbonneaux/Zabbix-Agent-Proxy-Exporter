@@ -149,3 +149,72 @@ groups: []
 		t.Fatal("timed out waiting for reload callback")
 	}
 }
+
+func TestWatchReloadsOnAtomicRenameReplace(t *testing.T) {
+	dir := t.TempDir()
+	tmpFile := dir + "/watch.yaml"
+	initial := []byte(`
+server:
+  listen_addr: ":9290"
+defaults:
+  port: 10050
+  timeout: 5s
+modules:
+  linux:
+    items:
+      - key: "agent.ping"
+        metric: "zabbix_agent_ping"
+        type: gauge
+        help: "ping"
+groups: []
+`)
+	if err := osWriteFile(tmpFile, initial, 0o644); err != nil {
+		t.Fatalf("failed to write initial config: %v", err)
+	}
+
+	reloaded := make(chan *Config, 1)
+	stop, err := Watch(tmpFile, func(cfg *Config, err error) {
+		if err != nil {
+			// Transient errors are expected and tolerated per Watch's
+			// documented contract; only forward successful reloads.
+			return
+		}
+		reloaded <- cfg
+	})
+	if err != nil {
+		t.Fatalf("Watch returned error: %v", err)
+	}
+	defer stop()
+
+	updated := []byte(`
+server:
+  listen_addr: ":9999"
+defaults:
+  port: 10050
+  timeout: 5s
+modules:
+  linux:
+    items:
+      - key: "agent.ping"
+        metric: "zabbix_agent_ping"
+        type: gauge
+        help: "ping"
+groups: []
+`)
+	stagingFile := dir + "/watch.yaml.tmp"
+	if err := osWriteFile(stagingFile, updated, 0o644); err != nil {
+		t.Fatalf("failed to write staging config: %v", err)
+	}
+	if err := os.Rename(stagingFile, tmpFile); err != nil {
+		t.Fatalf("failed to atomically rename staging config into place: %v", err)
+	}
+
+	select {
+	case cfg := <-reloaded:
+		if cfg.Server.ListenAddr != ":9999" {
+			t.Fatalf("got reloaded ListenAddr %q, want %q", cfg.Server.ListenAddr, ":9999")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for reload callback after atomic rename-replace")
+	}
+}
