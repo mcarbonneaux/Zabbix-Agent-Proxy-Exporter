@@ -401,3 +401,9 @@ queried:
   took.
 - `zabbix_item_errors_total{item="..."}` (counter) — one series per item
   key that failed during this scrape, with its failure count.
+
+## License
+
+GPLv3 — see [LICENSE](LICENSE).
+
+Copyright (C) 2026 Mathieu Carbonneaux, with Claude (Anthropic) as co-author.
