@@ -139,7 +139,7 @@ func (c *ZabbixCollector) Collect(ch chan<- prometheus.Metric) {
 }
 
 func (c *ZabbixCollector) emitValue(ch chan<- prometheus.Metric, metricName, help string, metricType config.MetricType, rawValue string, labelNames, labelValues []string) {
-	value, err := strconv.ParseFloat(rawValue, 64)
+	value, err := strconv.ParseFloat(strings.TrimSpace(rawValue), 64)
 	if err != nil {
 		c.logger.Warn("non-numeric item value skipped", zap.String("metric", metricName), zap.String("raw_value", rawValue))
 		return

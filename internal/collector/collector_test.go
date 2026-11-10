@@ -306,4 +306,39 @@ zabbix_scrape_success 1
 	}
 }
 
+func TestCollectTrimsWhitespaceFromNumericItemValue(t *testing.T) {
+	// Some UserParameter scripts (e.g. `wc -l` on Solaris) pad their
+	// numeric output with leading/trailing whitespace or a trailing
+	// newline; this must not cause the value to be skipped as
+	// non-numeric.
+	addr := startFakeAgent(t, map[string][]byte{
+		"num.port.used": []byte("      28\n"),
+	})
+
+	cfg := &config.Config{
+		Modules: map[string]config.Module{
+			"solaris": {
+				Items: []config.Item{
+					{Key: "num.port.used", Metric: "zabbix_tcp_ports_used", Type: config.MetricTypeGauge, Help: "ports"},
+				},
+			},
+		},
+	}
+
+	client := zabbixclient.New(2 * time.Second)
+	col := New(client, cfg, []string{"solaris"}, addr, zap.NewNop())
+
+	reg := prometheus.NewRegistry()
+	reg.MustRegister(col)
+
+	expected := `
+# HELP zabbix_tcp_ports_used ports
+# TYPE zabbix_tcp_ports_used gauge
+zabbix_tcp_ports_used 28
+`
+	if err := testutil.GatherAndCompare(reg, strings.NewReader(expected), "zabbix_tcp_ports_used"); err != nil {
+		t.Fatalf("unexpected metrics: %v", err)
+	}
+}
+
 var _ = context.Background // keep context import if unused by later edits
