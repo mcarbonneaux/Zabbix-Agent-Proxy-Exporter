@@ -1,0 +1,73 @@
+version: 2
+
+project_name: zabbix_agent_exporter
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: zabbix_agent_exporter
+    main: ./cmd/zabbix_agent_exporter
+    binary: zabbix_agent_exporter
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - "386"
+      - arm
+      - arm64
+    goarm:
+      - "7"
+    ignore:
+      # 386/arm/arm64 are only built for linux; darwin/windows get amd64
+      # (+ arm64 for darwin) via the explicit includes below.
+      - goos: darwin
+        goarch: "386"
+      - goos: darwin
+        goarch: arm
+      - goos: windows
+        goarch: "386"
+      - goos: windows
+        goarch: arm
+      - goos: windows
+        goarch: arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
+
+archives:
+  - id: zabbix_agent_exporter
+    formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - README.md
+      - LICENSE
+      - configs/config.example.yaml
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^chore:"
+      - "^test:"
+
+release:
+  github:
+    owner: mcarbonneaux
+    name: zabbix_agent_exporter
+  draft: false
+  prerelease: auto

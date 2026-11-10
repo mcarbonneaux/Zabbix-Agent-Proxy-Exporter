@@ -19,9 +19,21 @@ import (
 	"zabbix_agent_exporter/internal/httpserver"
 )
 
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
 func main() {
 	configPath := flag.String("config", "configs/config.example.yaml", "path to YAML config file")
+	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Printf("zabbix_agent_exporter %s (commit %s, built %s)\n", version, commit, date)
+		return
+	}
 
 	cfg, err := config.Load(*configPath)
 	if err != nil {
