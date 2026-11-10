@@ -28,6 +28,12 @@ func Resolve(cfg *Config, target string, urlModules []string, urlPort *int, urlT
 	modules := urlModules
 	if len(modules) == 0 {
 		modules = modulesFromGroups(cfg, target)
+	} else {
+		for _, m := range modules {
+			if _, ok := cfg.Modules[m]; !ok {
+				return ResolvedTarget{}, fmt.Errorf("config: module %q (from ?module=) is not defined in config", m)
+			}
+		}
 	}
 	if len(modules) == 0 {
 		return ResolvedTarget{}, fmt.Errorf("config: no module resolved for target %q; pass ?module=", target)

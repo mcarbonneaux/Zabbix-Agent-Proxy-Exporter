@@ -108,6 +108,22 @@ func TestMetricsHandlerReturns400WhenNoModuleResolved(t *testing.T) {
 	}
 }
 
+func TestMetricsHandlerReturns400WhenURLModuleUnknown(t *testing.T) {
+	addr := startFakeAgent(t)
+	host, _, _ := net.SplitHostPort(addr)
+	cfg := testConfigForAddr(addr)
+
+	srv := New(cfg, zap.NewNop())
+
+	req := httptest.NewRequest(http.MethodGet, "/metrics?target="+host+"&module=does-not-exist", nil)
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("got status %d, want 400; body: %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestHealthzReturns200(t *testing.T) {
 	cfg := testConfigForAddr("127.0.0.1:12345")
 	srv := New(cfg, zap.NewNop())

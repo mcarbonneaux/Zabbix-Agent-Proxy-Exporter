@@ -64,6 +64,15 @@ func TestResolveReturnsErrorWhenNoModuleResolved(t *testing.T) {
 	}
 }
 
+func TestResolveReturnsErrorWhenURLModuleUnknown(t *testing.T) {
+	cfg := testConfig()
+
+	_, err := Resolve(cfg, "srv-old-01", []string{"does-not-exist"}, nil, nil)
+	if err == nil {
+		t.Fatal("expected error for unknown URL module, got nil")
+	}
+}
+
 func TestResolvePortTimeoutCascade(t *testing.T) {
 	cfg := testConfig()
 
