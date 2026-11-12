@@ -101,6 +101,58 @@ modules:
         help: "Disk device is present (UserParameter: iostat -En)"
         label_name: "device"
 
+  # Example module for a current Zabbix agent (7.0.x, prebuilt for Solaris
+  # 10/SPARC) on Solaris — unlike the legacy "solaris" module above (a 1.8.5
+  # agent with no LLD support), this one has native discovery keys, so
+  # filesystems and network interfaces are enumerated the same way as the
+  # linux module via discovered_items instead of line_list_items. Verified
+  # against a real `zabbix_agentd -p` dump: `vfs.fs.size[<fs>,pfree]` and
+  # `net.if.in[<if>,bytes]` both exist, though the latter may return
+  # ZBX_NOTSUPPORTED on zone/virtual interfaces (e.g. vnet0) depending on
+  # what kernel statistics the zone has access to — that's handled like any
+  # other per-item failure (logged, counted, scrape continues).
+  solaris_modern:
+    items:
+      - key: "agent.ping"
+        metric: "zabbix_agent_ping"
+        type: gauge
+        help: "Agent reachability (1=up)"
+      - key: "system.cpu.load[all,avg1]"
+        metric: "zabbix_cpu_load1"
+        type: gauge
+        help: "CPU load average 1m"
+      - key: "system.cpu.num[online]"
+        metric: "zabbix_cpu_count"
+        type: gauge
+        help: "Number of online CPUs"
+      - key: "system.uptime"
+        metric: "zabbix_uptime_seconds"
+        type: gauge
+        help: "System uptime in seconds"
+      - key: "system.swap.size[all,free]"
+        metric: "zabbix_swap_free_bytes"
+        type: gauge
+        help: "Free swap space in bytes"
+      - key: "kernel.maxproc"
+        metric: "zabbix_kernel_maxproc"
+        type: gauge
+        help: "Maximum number of processes the kernel can run"
+    discovered_items:
+      - discovery_key: "vfs.fs.discovery"
+        value_key: "vfs.fs.size[{#FSNAME},pfree]"
+        metric: "zabbix_fs_free_percent"
+        type: gauge
+        help: "Free space percent per filesystem"
+        label_name: "mountpoint"
+        label_field: "{#FSNAME}"
+      - discovery_key: "net.if.discovery"
+        value_key: "net.if.in[{#IFNAME},bytes]"
+        metric: "zabbix_net_if_in_bytes"
+        type: counter
+        help: "Network bytes received per interface"
+        label_name: "interface"
+        label_field: "{#IFNAME}"
+
   # Example module for a Windows host running zabbix_agentd/zabbix_agent2.
   # Unlike the legacy Solaris agent above, a reasonably current Windows
   # agent supports native LLD (vfs.fs.discovery, net.if.discovery), so
