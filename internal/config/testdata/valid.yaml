@@ -6,12 +6,14 @@ server:
 defaults:
   port: 10050
   timeout: 5s
+  protocol: "legacy"
 
 hosts:
   srv-old-01: {}
   srv-old-02:
     port: 10150
     timeout: 10s
+    protocol: "json"
 
 modules:
   linux:

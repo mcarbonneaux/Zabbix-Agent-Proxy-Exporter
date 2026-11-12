@@ -10,6 +10,19 @@ const (
 	MetricTypeCounter MetricType = "counter"
 )
 
+// Protocol selects which Zabbix passive-check wire dialect to use for a
+// host. Mirrors zabbixclient.Protocol's three values; kept as a separate
+// type here (rather than importing zabbixclient) to avoid a dependency
+// from config on zabbixclient — collector converts between the two at
+// the one call site that needs both.
+type Protocol string
+
+const (
+	ProtocolPlain  Protocol = "plain"
+	ProtocolLegacy Protocol = "legacy"
+	ProtocolJSON   Protocol = "json"
+)
+
 // Config is the fully parsed exporter configuration.
 type Config struct {
 	Server   ServerConfig          `yaml:"server"`
@@ -26,16 +39,19 @@ type ServerConfig struct {
 	LogEncoding string `yaml:"log_encoding"`
 }
 
-// Defaults holds the fallback port/timeout used when a host has no override.
+// Defaults holds the fallback port/timeout/protocol used when a host has
+// no override.
 type Defaults struct {
-	Port    int           `yaml:"port"`
-	Timeout time.Duration `yaml:"timeout"`
+	Port     int           `yaml:"port"`
+	Timeout  time.Duration `yaml:"timeout"`
+	Protocol Protocol      `yaml:"protocol"`
 }
 
-// HostConfig holds optional per-host overrides of port/timeout.
+// HostConfig holds optional per-host overrides of port/timeout/protocol.
 type HostConfig struct {
-	Port    *int           `yaml:"port"`
-	Timeout *time.Duration `yaml:"timeout"`
+	Port     *int           `yaml:"port"`
+	Timeout  *time.Duration `yaml:"timeout"`
+	Protocol *Protocol      `yaml:"protocol"`
 }
 
 // Module is a named set of item mappings (simple, LLD-discovered, and

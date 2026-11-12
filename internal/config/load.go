@@ -24,6 +24,10 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("config: parse %s: %w", path, err)
 	}
 
+	if cfg.Defaults.Protocol == "" {
+		cfg.Defaults.Protocol = ProtocolLegacy
+	}
+
 	if err := validate(&cfg); err != nil {
 		return nil, fmt.Errorf("config: validate %s: %w", path, err)
 	}
@@ -56,7 +60,20 @@ func validate(cfg *Config) error {
 			}
 		}
 	}
+
+	if !isValidProtocol(cfg.Defaults.Protocol) {
+		return fmt.Errorf("defaults: invalid protocol %q (want plain, legacy, or json)", cfg.Defaults.Protocol)
+	}
+	for name, host := range cfg.Hosts {
+		if host.Protocol != nil && !isValidProtocol(*host.Protocol) {
+			return fmt.Errorf("host %q: invalid protocol %q (want plain, legacy, or json)", name, *host.Protocol)
+		}
+	}
 	return nil
+}
+
+func isValidProtocol(p Protocol) bool {
+	return p == ProtocolPlain || p == ProtocolLegacy || p == ProtocolJSON
 }
 
 // Watch monitors path for changes and invokes onChange with the newly

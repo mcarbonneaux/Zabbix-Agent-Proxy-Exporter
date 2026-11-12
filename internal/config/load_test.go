@@ -218,3 +218,37 @@ groups: []
 		t.Fatal("timed out waiting for reload callback after atomic rename-replace")
 	}
 }
+
+func TestLoadParsesProtocolField(t *testing.T) {
+	cfg, err := Load("testdata/valid.yaml")
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+
+	if cfg.Defaults.Protocol != ProtocolLegacy {
+		t.Fatalf("got Defaults.Protocol %q, want %q", cfg.Defaults.Protocol, ProtocolLegacy)
+	}
+
+	host, ok := cfg.Hosts["srv-old-02"]
+	if !ok {
+		t.Fatal("expected host srv-old-02 to be present")
+	}
+	if host.Protocol == nil || *host.Protocol != ProtocolJSON {
+		t.Fatalf("got srv-old-02 protocol override %v, want %q", host.Protocol, ProtocolJSON)
+	}
+
+	defaultHost, ok := cfg.Hosts["srv-old-01"]
+	if !ok {
+		t.Fatal("expected host srv-old-01 to be present")
+	}
+	if defaultHost.Protocol != nil {
+		t.Fatalf("expected srv-old-01 to have no protocol override, got %v", defaultHost.Protocol)
+	}
+}
+
+func TestLoadRejectsInvalidProtocol(t *testing.T) {
+	_, err := Load("testdata/invalid_protocol.yaml")
+	if err == nil {
+		t.Fatal("expected error for invalid protocol value, got nil")
+	}
+}
