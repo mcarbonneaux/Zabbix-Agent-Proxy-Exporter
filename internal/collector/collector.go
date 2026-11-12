@@ -61,6 +61,13 @@ func (c *ZabbixCollector) Collect(ch chan<- prometheus.Metric) {
 	success := 1.0
 	firstContact := true
 	itemErrors := map[string]int{}
+	// Tracks metric names already emitted without labels this scrape, so
+	// that two modules defining the same item under the same metric name
+	// (e.g. both "linux" and "solaris" expose agent.ping as
+	// zabbix_agent_ping) don't register a duplicate, label-less series —
+	// Prometheus rejects the whole Gather() if that happens, not just the
+	// one duplicate metric.
+	emittedUnlabeled := map[string]bool{}
 
 	for _, moduleName := range c.modules {
 		module, ok := c.cfg.Modules[moduleName]
@@ -70,6 +77,9 @@ func (c *ZabbixCollector) Collect(ch chan<- prometheus.Metric) {
 		}
 
 		for _, item := range module.Items {
+			if emittedUnlabeled[item.Metric] {
+				continue
+			}
 			value, err := c.client.GetItem(ctx, c.addr, item.Key)
 			if err != nil {
 				c.logger.Warn("item query failed", zap.String("item", item.Key), zap.Error(err))
@@ -81,6 +91,7 @@ func (c *ZabbixCollector) Collect(ch chan<- prometheus.Metric) {
 			}
 			firstContact = false
 			c.emitValue(ch, item.Metric, item.Help, item.Type, value, nil, nil)
+			emittedUnlabeled[item.Metric] = true
 		}
 
 		for _, di := range module.DiscoveredItems {

@@ -306,6 +306,46 @@ zabbix_scrape_success 1
 	}
 }
 
+func TestCollectHandlesSameMetricNameAcrossTwoModules(t *testing.T) {
+	// Two different modules legitimately defining an item under the same
+	// Prometheus metric name (e.g. both "linux" and "solaris" expose
+	// agent.ping as zabbix_agent_ping) must not silently drop one
+	// module's metrics when both are active for the same scrape.
+	addr := startFakeAgent(t, map[string][]byte{
+		"agent.ping": []byte("1"),
+	})
+
+	cfg := &config.Config{
+		Modules: map[string]config.Module{
+			"linux": {
+				Items: []config.Item{
+					{Key: "agent.ping", Metric: "zabbix_agent_ping", Type: config.MetricTypeGauge, Help: "ping"},
+				},
+			},
+			"solaris": {
+				Items: []config.Item{
+					{Key: "agent.ping", Metric: "zabbix_agent_ping", Type: config.MetricTypeGauge, Help: "ping"},
+				},
+			},
+		},
+	}
+
+	client := zabbixclient.New(2 * time.Second)
+	col := New(client, cfg, []string{"linux", "solaris"}, addr, zap.NewNop())
+
+	reg := prometheus.NewRegistry()
+	reg.MustRegister(col)
+
+	expected := `
+# HELP zabbix_agent_ping ping
+# TYPE zabbix_agent_ping gauge
+zabbix_agent_ping 1
+`
+	if err := testutil.GatherAndCompare(reg, strings.NewReader(expected), "zabbix_agent_ping"); err != nil {
+		t.Fatalf("unexpected metrics: %v", err)
+	}
+}
+
 func TestCollectTrimsWhitespaceFromNumericItemValue(t *testing.T) {
 	// Some UserParameter scripts (e.g. `wc -l` on Solaris) pad their
 	// numeric output with leading/trailing whitespace or a trailing
