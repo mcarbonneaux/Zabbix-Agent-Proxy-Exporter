@@ -9,7 +9,11 @@ func testConfig() *Config {
 	ten := 10150
 	tenSec := 10 * time.Second
 	return &Config{
-		Defaults: Defaults{Port: 10050, Timeout: 5 * time.Second},
+		// Protocol is set explicitly here (rather than left as the zero
+		// value) because this Config is built by hand, bypassing Load()'s
+		// defaulting logic — ProtocolLegacy matches what Load() would
+		// produce for a config that omits defaults.protocol entirely.
+		Defaults: Defaults{Port: 10050, Timeout: 5 * time.Second, Protocol: ProtocolLegacy},
 		Hosts: map[string]HostConfig{
 			"srv-old-01": {},
 			"srv-old-02": {Port: &ten, Timeout: &tenSec},
