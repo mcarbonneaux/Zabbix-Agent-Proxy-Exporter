@@ -7,9 +7,23 @@ server:
 defaults:
   port: 10050
   timeout: 5s
+  # Covers Zabbix 2.0–6.x agents (ZBXD header + bare key, no JSON) — the
+  # most common case. Override per host with "plain" (pre-2.0, no header
+  # at all) or "json" (7.0+, ZBXD header + JSON request/response).
+  protocol: "legacy"
 
 hosts:
   srv-old-01: {}
+  # Legacy Zabbix agent 1.8.5 on Solaris (see the "solaris" module below) —
+  # predates the ZBXD framing introduced in 2.0, so requests must be sent
+  # as a bare newline-terminated key with no header.
+  legacy-solaris-185:
+    protocol: "plain"
+  # Current Zabbix agent 7.0.3 on Solaris (see the "solaris_modern" module
+  # below) — speaks the newer JSON passive-check protocol.
+  modern-solaris-703:
+    port: 10051
+    protocol: "json"
 
 modules:
   linux:

@@ -50,7 +50,7 @@ func testConfigForAddr(addr string) *config.Config {
 		port = p
 	}
 	return &config.Config{
-		Defaults: config.Defaults{Port: port, Timeout: 2 * time.Second},
+		Defaults: config.Defaults{Port: port, Timeout: 2 * time.Second, Protocol: config.ProtocolPlain},
 		Hosts:    map[string]config.HostConfig{host: {}},
 		Modules: map[string]config.Module{
 			"linux": {Items: []config.Item{

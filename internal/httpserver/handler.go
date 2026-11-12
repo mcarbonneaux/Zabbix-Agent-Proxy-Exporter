@@ -53,7 +53,7 @@ func (s *Server) metricsHandler(w http.ResponseWriter, r *http.Request) {
 
 	addr := fmt.Sprintf("%s:%d", resolved.Host, resolved.Port)
 	client := zabbixclient.New(resolved.Timeout)
-	col := collector.New(client, cfg, resolved.Modules, addr, s.logger)
+	col := collector.New(client, cfg, resolved.Modules, addr, zabbixclient.Protocol(resolved.Protocol), s.logger)
 
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(col)
