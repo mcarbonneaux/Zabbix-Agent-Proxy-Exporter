@@ -11,34 +11,37 @@ import (
 	"go.uber.org/zap"
 
 	"zabbix_agent_exporter/internal/config"
+	"zabbix_agent_exporter/internal/zabbixclient"
 )
 
 // zabbixQuerier is the subset of zabbixclient.Client used by the collector,
 // defined locally so tests can substitute fakes without importing net.
 type zabbixQuerier interface {
-	GetItem(ctx context.Context, addr, key string) (string, error)
-	Discover(ctx context.Context, addr, discoveryKey string) ([]map[string]string, error)
+	GetItem(ctx context.Context, addr, key string, protocol zabbixclient.Protocol) (string, error)
+	Discover(ctx context.Context, addr, discoveryKey string, protocol zabbixclient.Protocol) ([]map[string]string, error)
 }
 
 // ZabbixCollector implements prometheus.Collector for a single resolved
 // target: it queries every item in the given modules sequentially against
 // one Zabbix agent address.
 type ZabbixCollector struct {
-	client  zabbixQuerier
-	cfg     *config.Config
-	modules []string
-	addr    string
-	logger  *zap.Logger
+	client   zabbixQuerier
+	cfg      *config.Config
+	modules  []string
+	addr     string
+	protocol zabbixclient.Protocol
+	logger   *zap.Logger
 }
 
 // New builds a collector for one scrape of addr using the given modules,
-// looked up by name in cfg.Modules. If logger is nil, a no-op logger is
-// used instead of panicking on the first Warn call.
-func New(client zabbixQuerier, cfg *config.Config, modules []string, addr string, logger *zap.Logger) *ZabbixCollector {
+// looked up by name in cfg.Modules, speaking the given protocol. If
+// logger is nil, a no-op logger is used instead of panicking on the
+// first Warn call.
+func New(client zabbixQuerier, cfg *config.Config, modules []string, addr string, protocol zabbixclient.Protocol, logger *zap.Logger) *ZabbixCollector {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
-	return &ZabbixCollector{client: client, cfg: cfg, modules: modules, addr: addr, logger: logger}
+	return &ZabbixCollector{client: client, cfg: cfg, modules: modules, addr: addr, protocol: protocol, logger: logger}
 }
 
 var (
@@ -80,7 +83,7 @@ func (c *ZabbixCollector) Collect(ch chan<- prometheus.Metric) {
 			if emittedUnlabeled[item.Metric] {
 				continue
 			}
-			value, err := c.client.GetItem(ctx, c.addr, item.Key)
+			value, err := c.client.GetItem(ctx, c.addr, item.Key, c.protocol)
 			if err != nil {
 				c.logger.Warn("item query failed", zap.String("item", item.Key), zap.Error(err))
 				itemErrors[item.Key]++
@@ -95,7 +98,7 @@ func (c *ZabbixCollector) Collect(ch chan<- prometheus.Metric) {
 		}
 
 		for _, di := range module.DiscoveredItems {
-			entities, err := c.client.Discover(ctx, c.addr, di.DiscoveryKey)
+			entities, err := c.client.Discover(ctx, c.addr, di.DiscoveryKey, c.protocol)
 			if err != nil {
 				c.logger.Warn("discovery query failed", zap.String("item", di.DiscoveryKey), zap.Error(err))
 				itemErrors[di.DiscoveryKey]++
@@ -109,7 +112,7 @@ func (c *ZabbixCollector) Collect(ch chan<- prometheus.Metric) {
 			for _, entity := range entities {
 				labelValue := entity[di.LabelField]
 				valueKey := substituteMacro(di.ValueKey, di.LabelField, labelValue)
-				value, err := c.client.GetItem(ctx, c.addr, valueKey)
+				value, err := c.client.GetItem(ctx, c.addr, valueKey, c.protocol)
 				if err != nil {
 					c.logger.Warn("discovered item query failed", zap.String("item", valueKey), zap.Error(err))
 					itemErrors[valueKey]++
@@ -120,7 +123,7 @@ func (c *ZabbixCollector) Collect(ch chan<- prometheus.Metric) {
 		}
 
 		for _, lli := range module.LineListItems {
-			value, err := c.client.GetItem(ctx, c.addr, lli.Key)
+			value, err := c.client.GetItem(ctx, c.addr, lli.Key, c.protocol)
 			if err != nil {
 				c.logger.Warn("line-list item query failed", zap.String("item", lli.Key), zap.Error(err))
 				itemErrors[lli.Key]++

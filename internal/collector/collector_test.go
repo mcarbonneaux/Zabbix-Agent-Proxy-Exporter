@@ -3,6 +3,7 @@ package collector
 
 import (
 	"context"
+	"encoding/json"
 	"net"
 	"strings"
 	"testing"
@@ -81,7 +82,7 @@ func TestCollectEmitsSimpleAndDiscoveredMetrics(t *testing.T) {
 	})
 
 	client := zabbixclient.New(2 * time.Second)
-	col := New(client, testModuleConfig(), []string{"linux"}, addr, zap.NewNop())
+	col := New(client, testModuleConfig(), []string{"linux"}, addr, zabbixclient.ProtocolPlain, zap.NewNop())
 
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(col)
@@ -105,7 +106,7 @@ zabbix_scrape_success 1
 
 func TestCollectMarksScrapeFailedWhenAgentUnreachable(t *testing.T) {
 	client := zabbixclient.New(200 * time.Millisecond)
-	col := New(client, testModuleConfig(), []string{"linux"}, "127.0.0.1:1", zap.NewNop())
+	col := New(client, testModuleConfig(), []string{"linux"}, "127.0.0.1:1", zabbixclient.ProtocolPlain, zap.NewNop())
 
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(col)
@@ -127,7 +128,7 @@ func TestCollectContinuesAfterSingleItemError(t *testing.T) {
 	})
 
 	client := zabbixclient.New(2 * time.Second)
-	col := New(client, testModuleConfig(), []string{"linux"}, addr, zap.NewNop())
+	col := New(client, testModuleConfig(), []string{"linux"}, addr, zabbixclient.ProtocolPlain, zap.NewNop())
 
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(col)
@@ -152,7 +153,7 @@ func TestNewDefaultsNilLoggerToNoop(t *testing.T) {
 	})
 
 	client := zabbixclient.New(2 * time.Second)
-	col := New(client, testModuleConfig(), []string{"linux"}, addr, nil)
+	col := New(client, testModuleConfig(), []string{"linux"}, addr, zabbixclient.ProtocolPlain, nil)
 
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(col)
@@ -171,7 +172,7 @@ func TestCollectEmitsOneMetricPerDiscoveredEntity(t *testing.T) {
 	})
 
 	client := zabbixclient.New(2 * time.Second)
-	col := New(client, testModuleConfig(), []string{"linux"}, addr, zap.NewNop())
+	col := New(client, testModuleConfig(), []string{"linux"}, addr, zabbixclient.ProtocolPlain, zap.NewNop())
 
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(col)
@@ -208,7 +209,7 @@ func TestCollectEmitsOneMetricPerLineListEntry(t *testing.T) {
 	}
 
 	client := zabbixclient.New(2 * time.Second)
-	col := New(client, cfg, []string{"solaris"}, addr, zap.NewNop())
+	col := New(client, cfg, []string{"solaris"}, addr, zabbixclient.ProtocolPlain, zap.NewNop())
 
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(col)
@@ -246,7 +247,7 @@ func TestCollectSkipsEmptyLinesInLineListItem(t *testing.T) {
 	}
 
 	client := zabbixclient.New(2 * time.Second)
-	col := New(client, cfg, []string{"solaris"}, addr, zap.NewNop())
+	col := New(client, cfg, []string{"solaris"}, addr, zabbixclient.ProtocolPlain, zap.NewNop())
 
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(col)
@@ -287,7 +288,7 @@ func TestCollectLineListItemFailureCountsAsItemError(t *testing.T) {
 	}
 
 	client := zabbixclient.New(2 * time.Second)
-	col := New(client, cfg, []string{"solaris"}, addr, zap.NewNop())
+	col := New(client, cfg, []string{"solaris"}, addr, zabbixclient.ProtocolPlain, zap.NewNop())
 
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(col)
@@ -331,7 +332,7 @@ func TestCollectHandlesSameMetricNameAcrossTwoModules(t *testing.T) {
 	}
 
 	client := zabbixclient.New(2 * time.Second)
-	col := New(client, cfg, []string{"linux", "solaris"}, addr, zap.NewNop())
+	col := New(client, cfg, []string{"linux", "solaris"}, addr, zabbixclient.ProtocolPlain, zap.NewNop())
 
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(col)
@@ -366,7 +367,7 @@ func TestCollectTrimsWhitespaceFromNumericItemValue(t *testing.T) {
 	}
 
 	client := zabbixclient.New(2 * time.Second)
-	col := New(client, cfg, []string{"solaris"}, addr, zap.NewNop())
+	col := New(client, cfg, []string{"solaris"}, addr, zabbixclient.ProtocolPlain, zap.NewNop())
 
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(col)
@@ -377,6 +378,68 @@ func TestCollectTrimsWhitespaceFromNumericItemValue(t *testing.T) {
 zabbix_tcp_ports_used 28
 `
 	if err := testutil.GatherAndCompare(reg, strings.NewReader(expected), "zabbix_tcp_ports_used"); err != nil {
+		t.Fatalf("unexpected metrics: %v", err)
+	}
+}
+
+func TestCollectUsesConfiguredProtocolForQueries(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to start fake agent: %v", err)
+	}
+	t.Cleanup(func() { ln.Close() })
+
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer conn.Close()
+				payload, err := zabbixproto.ReadFrame(conn)
+				if err != nil {
+					return
+				}
+				var req struct {
+					Data []struct {
+						Key string `json:"key"`
+					} `json:"data"`
+				}
+				if err := json.Unmarshal(payload, &req); err != nil || len(req.Data) == 0 {
+					return
+				}
+				if req.Data[0].Key != "agent.ping" {
+					return
+				}
+				_ = zabbixproto.WriteFrame(conn, []byte(`{"version":"7.0.3","variant":2,"data":[{"value":"1"}]}`))
+			}()
+		}
+	}()
+	addr := ln.Addr().String()
+
+	cfg := &config.Config{
+		Modules: map[string]config.Module{
+			"solaris_modern": {
+				Items: []config.Item{
+					{Key: "agent.ping", Metric: "zabbix_agent_ping", Type: config.MetricTypeGauge, Help: "ping"},
+				},
+			},
+		},
+	}
+
+	client := zabbixclient.New(2 * time.Second)
+	col := New(client, cfg, []string{"solaris_modern"}, addr, zabbixclient.ProtocolJSON, zap.NewNop())
+
+	reg := prometheus.NewRegistry()
+	reg.MustRegister(col)
+
+	expected := `
+# HELP zabbix_agent_ping ping
+# TYPE zabbix_agent_ping gauge
+zabbix_agent_ping 1
+`
+	if err := testutil.GatherAndCompare(reg, strings.NewReader(expected), "zabbix_agent_ping"); err != nil {
 		t.Fatalf("unexpected metrics: %v", err)
 	}
 }
