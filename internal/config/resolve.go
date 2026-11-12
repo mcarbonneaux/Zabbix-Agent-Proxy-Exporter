@@ -25,6 +25,12 @@ type ResolvedTarget struct {
 // urlPort/urlTimeout. urlPort and urlTimeout are pointers so a caller can
 // distinguish "not provided" (nil) from an explicit value (including the
 // zero value) provided via the URL.
+//
+// Protocol resolution cascades the same way but stops one step earlier:
+// Defaults -> Hosts[target] override, with no URL-level override. Unlike
+// port/timeout, the wire protocol is a property of the agent/host being
+// scraped, not something a one-off scrape request should be able to
+// change, so Resolve intentionally has no urlProtocol parameter.
 func Resolve(cfg *Config, target string, urlModules []string, urlPort *int, urlTimeout *time.Duration) (ResolvedTarget, error) {
 	modules := urlModules
 	if len(modules) == 0 {
