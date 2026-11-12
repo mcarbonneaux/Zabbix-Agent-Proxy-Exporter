@@ -85,7 +85,7 @@ func (c *ZabbixCollector) Collect(ch chan<- prometheus.Metric) {
 			}
 			value, err := c.client.GetItem(ctx, c.addr, item.Key, c.protocol)
 			if err != nil {
-				c.logger.Warn("item query failed", zap.String("item", item.Key), zap.Error(err))
+				c.logger.Warn("item query failed", zap.String("item", item.Key), zap.String("protocol", string(c.protocol)), zap.Error(err))
 				itemErrors[item.Key]++
 				if firstContact {
 					success = 0
@@ -100,7 +100,7 @@ func (c *ZabbixCollector) Collect(ch chan<- prometheus.Metric) {
 		for _, di := range module.DiscoveredItems {
 			entities, err := c.client.Discover(ctx, c.addr, di.DiscoveryKey, c.protocol)
 			if err != nil {
-				c.logger.Warn("discovery query failed", zap.String("item", di.DiscoveryKey), zap.Error(err))
+				c.logger.Warn("discovery query failed", zap.String("item", di.DiscoveryKey), zap.String("protocol", string(c.protocol)), zap.Error(err))
 				itemErrors[di.DiscoveryKey]++
 				if firstContact {
 					success = 0
