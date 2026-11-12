@@ -8,10 +8,11 @@ import (
 // ResolvedTarget holds the fully resolved connection settings and module
 // list for a single scrape of one target.
 type ResolvedTarget struct {
-	Host    string
-	Port    int
-	Timeout time.Duration
-	Modules []string
+	Host     string
+	Port     int
+	Timeout  time.Duration
+	Protocol Protocol
+	Modules  []string
 }
 
 // Resolve computes the modules, port, and timeout to use for target.
@@ -41,12 +42,16 @@ func Resolve(cfg *Config, target string, urlModules []string, urlPort *int, urlT
 
 	port := cfg.Defaults.Port
 	timeout := cfg.Defaults.Timeout
+	protocol := cfg.Defaults.Protocol
 	if host, ok := cfg.Hosts[target]; ok {
 		if host.Port != nil {
 			port = *host.Port
 		}
 		if host.Timeout != nil {
 			timeout = *host.Timeout
+		}
+		if host.Protocol != nil {
+			protocol = *host.Protocol
 		}
 	}
 	if urlPort != nil {
@@ -57,10 +62,11 @@ func Resolve(cfg *Config, target string, urlModules []string, urlPort *int, urlT
 	}
 
 	return ResolvedTarget{
-		Host:    target,
-		Port:    port,
-		Timeout: timeout,
-		Modules: modules,
+		Host:     target,
+		Port:     port,
+		Timeout:  timeout,
+		Protocol: protocol,
+		Modules:  modules,
 	}, nil
 }
 

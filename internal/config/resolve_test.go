@@ -8,6 +8,7 @@ import (
 func testConfig() *Config {
 	ten := 10150
 	tenSec := 10 * time.Second
+	jsonProto := ProtocolJSON
 	return &Config{
 		// Protocol is set explicitly here (rather than left as the zero
 		// value) because this Config is built by hand, bypassing Load()'s
@@ -16,7 +17,7 @@ func testConfig() *Config {
 		Defaults: Defaults{Port: 10050, Timeout: 5 * time.Second, Protocol: ProtocolLegacy},
 		Hosts: map[string]HostConfig{
 			"srv-old-01": {},
-			"srv-old-02": {Port: &ten, Timeout: &tenSec},
+			"srv-old-02": {Port: &ten, Timeout: &tenSec, Protocol: &jsonProto},
 		},
 		Modules: map[string]Module{
 			"linux": {},
@@ -145,5 +146,27 @@ func TestResolveURLZeroValuesOverrideHostOverride(t *testing.T) {
 	}
 	if resolved.Timeout != 0 {
 		t.Fatalf("got timeout %v, want explicit URL override 0", resolved.Timeout)
+	}
+}
+
+func TestResolveProtocolCascade(t *testing.T) {
+	cfg := testConfig()
+
+	// srv-old-01 has no host override -> falls back to Defaults.Protocol.
+	resolved, err := Resolve(cfg, "srv-old-01", nil, nil, nil)
+	if err != nil {
+		t.Fatalf("Resolve returned error: %v", err)
+	}
+	if resolved.Protocol != ProtocolLegacy {
+		t.Fatalf("got protocol %q, want default %q", resolved.Protocol, ProtocolLegacy)
+	}
+
+	// srv-old-02 has a host override -> takes precedence over Defaults.
+	resolved, err = Resolve(cfg, "srv-old-02", nil, nil, nil)
+	if err != nil {
+		t.Fatalf("Resolve returned error: %v", err)
+	}
+	if resolved.Protocol != ProtocolJSON {
+		t.Fatalf("got protocol %q, want host override %q", resolved.Protocol, ProtocolJSON)
 	}
 }
