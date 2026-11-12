@@ -3,6 +3,7 @@ package zabbixproto
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"io"
 	"strings"
@@ -90,5 +91,119 @@ func TestWritePlainRequestHasNoHeader(t *testing.T) {
 	}
 	if got := buf.String(); got != "agent.ping\n" {
 		t.Fatalf("got %q, want %q", got, "agent.ping\n")
+	}
+}
+
+func TestWriteLegacyRequestWrapsKeyInZBXDHeader(t *testing.T) {
+	var buf bytes.Buffer
+	if err := WriteLegacyRequest(&buf, "agent.ping"); err != nil {
+		t.Fatalf("WriteLegacyRequest returned error: %v", err)
+	}
+
+	got, err := ReadFrame(&buf)
+	if err != nil {
+		t.Fatalf("ReadFrame returned error: %v", err)
+	}
+	if string(got) != "agent.ping" {
+		t.Fatalf("got payload %q, want %q (no trailing newline)", got, "agent.ping")
+	}
+}
+
+func TestWriteJSONRequestBuildsPassiveChecksPayload(t *testing.T) {
+	var buf bytes.Buffer
+	if err := WriteJSONRequest(&buf, "agent.ping", 5); err != nil {
+		t.Fatalf("WriteJSONRequest returned error: %v", err)
+	}
+
+	got, err := ReadFrame(&buf)
+	if err != nil {
+		t.Fatalf("ReadFrame returned error: %v", err)
+	}
+
+	var decoded map[string]interface{}
+	if err := json.Unmarshal(got, &decoded); err != nil {
+		t.Fatalf("failed to unmarshal written payload: %v", err)
+	}
+	if decoded["request"] != "passive checks" {
+		t.Fatalf("got request %q, want %q", decoded["request"], "passive checks")
+	}
+	data, ok := decoded["data"].([]interface{})
+	if !ok || len(data) != 1 {
+		t.Fatalf("got data %v, want a single-element array", decoded["data"])
+	}
+	item, ok := data[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("got data[0] %v, want an object", data[0])
+	}
+	if item["key"] != "agent.ping" {
+		t.Fatalf("got key %v, want %q", item["key"], "agent.ping")
+	}
+	if item["timeout"] != float64(5) {
+		t.Fatalf("got timeout %v, want 5", item["timeout"])
+	}
+}
+
+func TestWriteJSONRequestFloorsTimeoutToOneSecond(t *testing.T) {
+	var buf bytes.Buffer
+	if err := WriteJSONRequest(&buf, "agent.ping", 0); err != nil {
+		t.Fatalf("WriteJSONRequest returned error: %v", err)
+	}
+
+	got, err := ReadFrame(&buf)
+	if err != nil {
+		t.Fatalf("ReadFrame returned error: %v", err)
+	}
+
+	var decoded map[string]interface{}
+	if err := json.Unmarshal(got, &decoded); err != nil {
+		t.Fatalf("failed to unmarshal written payload: %v", err)
+	}
+	data := decoded["data"].([]interface{})
+	item := data[0].(map[string]interface{})
+	if item["timeout"] != float64(1) {
+		t.Fatalf("got timeout %v, want floor of 1", item["timeout"])
+	}
+}
+
+func TestParseJSONResponseExtractsValue(t *testing.T) {
+	payload := []byte(`{"version":"7.0.3","variant":2,"data":[{"value":"1"}]}`)
+
+	got, err := ParseJSONResponse(payload)
+	if err != nil {
+		t.Fatalf("ParseJSONResponse returned error: %v", err)
+	}
+	if got != "1" {
+		t.Fatalf("got %q, want %q", got, "1")
+	}
+}
+
+func TestParseJSONResponseReturnsErrorOnDataError(t *testing.T) {
+	payload := []byte(`{"version":"7.0.3","variant":2,"data":[{"error":"Unsupported item key."}]}`)
+
+	_, err := ParseJSONResponse(payload)
+	if err == nil {
+		t.Fatal("expected error for data[].error, got nil")
+	}
+	if !strings.Contains(err.Error(), "not supported") {
+		t.Fatalf("expected 'not supported' in error, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "Unsupported item key.") {
+		t.Fatalf("expected original Zabbix error text in error, got: %v", err)
+	}
+}
+
+func TestParseJSONResponseReturnsErrorOnEmptyDataArray(t *testing.T) {
+	payload := []byte(`{"version":"7.0.3","variant":2,"data":[]}`)
+
+	_, err := ParseJSONResponse(payload)
+	if err == nil {
+		t.Fatal("expected error for empty data array, got nil")
+	}
+}
+
+func TestParseJSONResponseReturnsErrorOnMalformedJSON(t *testing.T) {
+	_, err := ParseJSONResponse([]byte("not valid json"))
+	if err == nil {
+		t.Fatal("expected error for malformed JSON, got nil")
 	}
 }

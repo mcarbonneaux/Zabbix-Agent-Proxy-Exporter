@@ -2,6 +2,7 @@ package zabbixproto
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"io"
 )
@@ -59,4 +60,64 @@ func ReadFrame(r io.Reader) ([]byte, error) {
 		return nil, fmt.Errorf("zabbixproto: read payload: %w", err)
 	}
 	return payload, nil
+}
+
+// WriteLegacyRequest writes key as a ZBXD-framed payload containing just
+// the bare key — no trailing newline, no JSON. This is the Zabbix
+// 2.0–6.x passive-check request format.
+func WriteLegacyRequest(w io.Writer, key string) error {
+	return WriteFrame(w, []byte(key))
+}
+
+type jsonRequest struct {
+	Request string            `json:"request"`
+	Data    []jsonRequestItem `json:"data"`
+}
+
+type jsonRequestItem struct {
+	Key     string `json:"key"`
+	Timeout int    `json:"timeout"`
+}
+
+// WriteJSONRequest writes a ZBXD-framed JSON "passive checks" request for
+// key, with the given timeout in seconds (floored to 1 if lower). This is
+// the Zabbix 7.0+ passive-check request format.
+func WriteJSONRequest(w io.Writer, key string, timeoutSeconds int) error {
+	if timeoutSeconds < 1 {
+		timeoutSeconds = 1
+	}
+	payload, err := json.Marshal(jsonRequest{
+		Request: "passive checks",
+		Data:    []jsonRequestItem{{Key: key, Timeout: timeoutSeconds}},
+	})
+	if err != nil {
+		return fmt.Errorf("zabbixproto: marshal json request for %q: %w", key, err)
+	}
+	return WriteFrame(w, payload)
+}
+
+type jsonResponse struct {
+	Data []jsonResponseItem `json:"data"`
+}
+
+type jsonResponseItem struct {
+	Value string `json:"value"`
+	Error string `json:"error"`
+}
+
+// ParseJSONResponse extracts the single value (or error) from a Zabbix
+// 7.0+ passive-check JSON response payload, as read via ReadFrame.
+func ParseJSONResponse(payload []byte) (string, error) {
+	var resp jsonResponse
+	if err := json.Unmarshal(payload, &resp); err != nil {
+		return "", fmt.Errorf("zabbixproto: parse json response: %w", err)
+	}
+	if len(resp.Data) == 0 {
+		return "", fmt.Errorf("zabbixproto: json response data array is empty")
+	}
+	item := resp.Data[0]
+	if item.Error != "" {
+		return "", fmt.Errorf("zabbixproto: item not supported: %s", item.Error)
+	}
+	return item.Value, nil
 }
