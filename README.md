@@ -194,27 +194,51 @@ config resolve the modules (see below), which is the normal path.
 
 ## Configuring hosts
 
-The `hosts` section declares per-host overrides of the Zabbix agent port
-and/or timeout. A host does **not** need an entry here to be scraped — if
-omitted, it simply uses `defaults.port` / `defaults.timeout`. An empty
-override (`{}`) means the same thing explicitly.
+The `hosts` section declares per-host overrides of the Zabbix agent port,
+timeout, and/or protocol. A host does **not** need an entry here to be
+scraped — if omitted, it simply uses `defaults.port` / `defaults.timeout` /
+`defaults.protocol`. An empty override (`{}`) means the same thing
+explicitly.
 
 ```yaml
 defaults:
   port: 10050
   timeout: 5s
+  protocol: "legacy"             # covers Zabbix 2.0-6.x agents
 
 hosts:
-  srv-old-01: {}                # no override, uses defaults (port 10050, 5s)
+  srv-old-01: {}                 # no override, uses defaults (port 10050, 5s, "legacy")
   srv-old-02:
-    port: 10150                 # this one agent listens on a different port
-    timeout: 10s                # ...and is slower to respond
+    port: 10150                  # this one agent listens on a different port
+    timeout: 10s                 # ...and is slower to respond
+  legacy-aix-01:
+    protocol: "plain"            # pre-2.0 agent: no ZBXD header at all
+  modern-solaris-01:
+    port: 10051
+    protocol: "json"             # 7.0+ agent: ZBXD header + JSON request/response
 ```
 
 Resolution order for port/timeout, each resolved independently (you can
 override just the port and still inherit the default timeout, for
 example): `defaults` → `hosts.<name>` override → `?port=`/`?timeout=` URL
 query parameter (highest priority, if present).
+
+`protocol` follows the same `defaults` → `hosts.<name>` override cascade,
+but has **no** `?protocol=` URL step — it's a fixed property of the agent
+you're talking to, not something a one-off scrape should override. Valid
+values are:
+
+- `"plain"` — bare key + newline, no `ZBXD` header. Zabbix agents older
+  than 2.0.
+- `"legacy"` — `ZBXD` header wrapping a bare key, no JSON. Zabbix 2.0
+  through 6.x. This is the default.
+- `"json"` — `ZBXD` header wrapping a JSON passive-check request/response.
+  Zabbix 7.0 and newer.
+
+If you query an agent with the wrong protocol, every item on that host
+fails (visible as a drop in `zabbix_scrape_success` and errors logged with
+the configured protocol, e.g. `"missing header"` on the agent side if you
+send `plain`/`legacy` to a 7.0+ agent that requires `json`).
 
 ## Configuring modules
 
