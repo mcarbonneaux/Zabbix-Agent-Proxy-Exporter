@@ -58,12 +58,14 @@ func (c *Client) roundTrip(ctx context.Context, addr, key string, protocol Proto
 
 	var writeErr error
 	switch protocol {
+	case ProtocolPlain:
+		writeErr = zabbixproto.WritePlainRequest(conn, key)
 	case ProtocolLegacy:
 		writeErr = zabbixproto.WriteLegacyRequest(conn, key)
 	case ProtocolJSON:
 		writeErr = zabbixproto.WriteJSONRequest(conn, key, int(c.timeout.Seconds()))
 	default:
-		writeErr = zabbixproto.WritePlainRequest(conn, key)
+		return nil, fmt.Errorf("zabbixclient: unknown protocol %q", protocol)
 	}
 	if writeErr != nil {
 		return nil, fmt.Errorf("zabbixclient: send request %q to %s: %w", key, addr, writeErr)
@@ -96,6 +98,9 @@ func (c *Client) GetItem(ctx context.Context, addr, key string, protocol Protoco
 	if protocol == ProtocolJSON {
 		value, err := zabbixproto.ParseJSONResponse(payload)
 		if err != nil {
+			if strings.Contains(err.Error(), "not supported") {
+				return "", fmt.Errorf("zabbixclient: item %q not supported by %s: %w", key, addr, err)
+			}
 			return "", fmt.Errorf("zabbixclient: item %q from %s: %w", key, addr, err)
 		}
 		return value, nil
@@ -120,6 +125,9 @@ func (c *Client) Discover(ctx context.Context, addr, discoveryKey string, protoc
 	if protocol == ProtocolJSON {
 		value, err := zabbixproto.ParseJSONResponse(payload)
 		if err != nil {
+			if strings.Contains(err.Error(), "not supported") {
+				return nil, fmt.Errorf("zabbixclient: item %q not supported by %s: %w", discoveryKey, addr, err)
+			}
 			return nil, fmt.Errorf("zabbixclient: discovery %q from %s: %w", discoveryKey, addr, err)
 		}
 		lldJSON = []byte(value)

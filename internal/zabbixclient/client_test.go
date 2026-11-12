@@ -21,12 +21,24 @@ import (
 // respectively) and requestKey is extracted accordingly before being
 // passed to respond.
 func startFakeAgent(t *testing.T, protocol Protocol, respond func(requestKey string) []byte) string {
+	addr, _ := startFakeAgentCapturingTimeout(t, protocol, respond)
+	return addr
+}
+
+// startFakeAgentCapturingTimeout behaves like startFakeAgent but also
+// exposes the timeout field decoded from a ProtocolJSON request (via the
+// returned function, which blocks until one request has been received).
+// For ProtocolPlain/ProtocolLegacy, the returned function always returns 0
+// since those protocols carry no timeout field on the wire.
+func startFakeAgentCapturingTimeout(t *testing.T, protocol Protocol, respond func(requestKey string) []byte) (string, func() int) {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("failed to start fake agent: %v", err)
 	}
 	t.Cleanup(func() { ln.Close() })
+
+	timeoutCh := make(chan int, 1)
 
 	go func() {
 		for {
@@ -59,20 +71,35 @@ func startFakeAgent(t *testing.T, protocol Protocol, respond func(requestKey str
 					}
 					var req struct {
 						Data []struct {
-							Key string `json:"key"`
+							Key     string `json:"key"`
+							Timeout int    `json:"timeout"`
 						} `json:"data"`
 					}
 					if err := json.Unmarshal(payload, &req); err != nil || len(req.Data) == 0 {
 						return
 					}
 					requestKey = req.Data[0].Key
+					select {
+					case timeoutCh <- req.Data[0].Timeout:
+					default:
+					}
 				}
 
 				_ = zabbixproto.WriteFrame(conn, respond(requestKey))
 			}()
 		}
 	}()
-	return ln.Addr().String()
+
+	getTimeout := func() int {
+		select {
+		case v := <-timeoutCh:
+			return v
+		case <-time.After(2 * time.Second):
+			return 0
+		}
+	}
+
+	return ln.Addr().String(), getTimeout
 }
 
 func TestGetItemReturnsValue(t *testing.T) {
@@ -214,8 +241,39 @@ func TestGetItemJSONProtocolReturnsNotSupportedOnDataError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for unsupported item, got nil")
 	}
-	if !strings.Contains(err.Error(), "not supported") {
-		t.Fatalf("expected 'not supported' in error, got: %v", err)
+	if !strings.Contains(err.Error(), "not supported by") {
+		t.Fatalf("expected 'not supported by' in error, got: %v", err)
+	}
+}
+
+func TestGetItemJSONProtocolSendsNonZeroTimeoutMatchingClientTimeout(t *testing.T) {
+	addr, getTimeout := startFakeAgentCapturingTimeout(t, ProtocolJSON, func(key string) []byte {
+		return []byte(`{"version":"7.0.3","variant":2,"data":[{"value":"1"}]}`)
+	})
+
+	client := New(5 * time.Second)
+	if _, err := client.GetItem(context.Background(), addr, "agent.ping", ProtocolJSON); err != nil {
+		t.Fatalf("GetItem returned error: %v", err)
+	}
+
+	got := getTimeout()
+	if got != 5 {
+		t.Fatalf("got JSON request timeout %d, want 5 (matching client timeout of 5s)", got)
+	}
+}
+
+func TestGetItemReturnsErrorOnUnknownProtocol(t *testing.T) {
+	addr := startFakeAgent(t, ProtocolPlain, func(key string) []byte {
+		return []byte("1")
+	})
+
+	client := New(2 * time.Second)
+	_, err := client.GetItem(context.Background(), addr, "agent.ping", Protocol("bogus-protocol"))
+	if err == nil {
+		t.Fatal("expected error for unknown protocol, got nil")
+	}
+	if !strings.Contains(err.Error(), "unknown protocol") {
+		t.Fatalf("expected 'unknown protocol' in error, got: %v", err)
 	}
 }
 
