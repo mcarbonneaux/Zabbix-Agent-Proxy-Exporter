@@ -218,3 +218,9 @@ groups:
   - name: "tous-linux"
     hosts: ["srv-old-01"]
     modules: ["linux"]
+  - name: "solaris-legacy"
+    hosts: ["legacy-solaris-185"]
+    modules: ["solaris"]
+  - name: "solaris-moderne"
+    hosts: ["modern-solaris-703"]
+    modules: ["solaris_modern"]
