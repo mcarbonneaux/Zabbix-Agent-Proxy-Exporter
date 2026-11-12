@@ -106,7 +106,10 @@ type jsonResponseItem struct {
 }
 
 // ParseJSONResponse extracts the single value (or error) from a Zabbix
-// 7.0+ passive-check JSON response payload, as read via ReadFrame.
+// 7.0+ passive-check JSON response payload, as read via ReadFrame. This
+// exporter always requests exactly one item per request, so only the
+// first element of the response's data array is examined; any further
+// elements are ignored.
 func ParseJSONResponse(payload []byte) (string, error) {
 	var resp jsonResponse
 	if err := json.Unmarshal(payload, &resp); err != nil {
@@ -115,6 +118,8 @@ func ParseJSONResponse(payload []byte) (string, error) {
 	if len(resp.Data) == 0 {
 		return "", fmt.Errorf("zabbixproto: json response data array is empty")
 	}
+	// Only data[0] is examined, per the single-item-per-request design
+	// documented above.
 	item := resp.Data[0]
 	if item.Error != "" {
 		return "", fmt.Errorf("zabbixproto: item not supported: %s", item.Error)
