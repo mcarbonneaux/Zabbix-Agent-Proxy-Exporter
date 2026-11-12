@@ -12,6 +12,25 @@ import (
 	"zabbix_agent_exporter/internal/zabbixproto"
 )
 
+// Protocol selects which Zabbix passive-check wire dialect to speak to an
+// agent. Different Zabbix agent generations expect different request
+// framing and response shapes on the same TCP port; see
+// docs/superpowers/specs/2026-11-12-multi-protocol-passive-check-design.md
+// for the full rationale.
+type Protocol string
+
+const (
+	// ProtocolPlain sends a bare newline-terminated key with no ZBXD
+	// header on the request. Matches Zabbix agents older than 2.0.
+	ProtocolPlain Protocol = "plain"
+	// ProtocolLegacy sends a ZBXD-framed bare key (no JSON). Matches
+	// Zabbix agents 2.0 through 6.x.
+	ProtocolLegacy Protocol = "legacy"
+	// ProtocolJSON sends a ZBXD-framed JSON "passive checks" request and
+	// expects a JSON response. Matches Zabbix agents 7.0 and newer.
+	ProtocolJSON Protocol = "json"
+)
+
 // Client queries Zabbix passive agents over TCP, one item per connection.
 type Client struct {
 	timeout time.Duration
@@ -22,7 +41,7 @@ func New(timeout time.Duration) *Client {
 	return &Client{timeout: timeout}
 }
 
-func (c *Client) roundTrip(ctx context.Context, addr, key string) ([]byte, error) {
+func (c *Client) roundTrip(ctx context.Context, addr, key string, protocol Protocol) ([]byte, error) {
 	dialer := net.Dialer{Timeout: c.timeout}
 	conn, err := dialer.DialContext(ctx, "tcp", addr)
 	if err != nil {
@@ -37,8 +56,17 @@ func (c *Client) roundTrip(ctx context.Context, addr, key string) ([]byte, error
 		return nil, fmt.Errorf("zabbixclient: set deadline: %w", err)
 	}
 
-	if err := zabbixproto.WritePlainRequest(conn, key); err != nil {
-		return nil, fmt.Errorf("zabbixclient: send request %q to %s: %w", key, addr, err)
+	var writeErr error
+	switch protocol {
+	case ProtocolLegacy:
+		writeErr = zabbixproto.WriteLegacyRequest(conn, key)
+	case ProtocolJSON:
+		writeErr = zabbixproto.WriteJSONRequest(conn, key, int(c.timeout.Seconds()))
+	default:
+		writeErr = zabbixproto.WritePlainRequest(conn, key)
+	}
+	if writeErr != nil {
+		return nil, fmt.Errorf("zabbixclient: send request %q to %s: %w", key, addr, writeErr)
 	}
 
 	payload, err := zabbixproto.ReadFrame(conn)
@@ -57,31 +85,53 @@ func checkNotSupported(key, addr string, payload []byte) error {
 	return nil
 }
 
-// GetItem requests key from the agent at addr and returns its raw string value.
-func (c *Client) GetItem(ctx context.Context, addr, key string) (string, error) {
-	payload, err := c.roundTrip(ctx, addr, key)
+// GetItem requests key from the agent at addr using the given protocol and
+// returns its string value.
+func (c *Client) GetItem(ctx context.Context, addr, key string, protocol Protocol) (string, error) {
+	payload, err := c.roundTrip(ctx, addr, key, protocol)
 	if err != nil {
 		return "", err
 	}
+
+	if protocol == ProtocolJSON {
+		value, err := zabbixproto.ParseJSONResponse(payload)
+		if err != nil {
+			return "", fmt.Errorf("zabbixclient: item %q from %s: %w", key, addr, err)
+		}
+		return value, nil
+	}
+
 	if err := checkNotSupported(key, addr, payload); err != nil {
 		return "", err
 	}
 	return string(payload), nil
 }
 
-// Discover requests a discovery key (e.g. vfs.fs.discovery) and returns
-// the list of discovered entities as maps of macro name to value.
-func (c *Client) Discover(ctx context.Context, addr, discoveryKey string) ([]map[string]string, error) {
-	payload, err := c.roundTrip(ctx, addr, discoveryKey)
+// Discover requests a discovery key (e.g. vfs.fs.discovery) using the
+// given protocol and returns the list of discovered entities as maps of
+// macro name to value.
+func (c *Client) Discover(ctx context.Context, addr, discoveryKey string, protocol Protocol) ([]map[string]string, error) {
+	payload, err := c.roundTrip(ctx, addr, discoveryKey, protocol)
 	if err != nil {
 		return nil, err
 	}
-	if err := checkNotSupported(discoveryKey, addr, payload); err != nil {
-		return nil, err
+
+	var lldJSON []byte
+	if protocol == ProtocolJSON {
+		value, err := zabbixproto.ParseJSONResponse(payload)
+		if err != nil {
+			return nil, fmt.Errorf("zabbixclient: discovery %q from %s: %w", discoveryKey, addr, err)
+		}
+		lldJSON = []byte(value)
+	} else {
+		if err := checkNotSupported(discoveryKey, addr, payload); err != nil {
+			return nil, err
+		}
+		lldJSON = payload
 	}
 
 	var entities []map[string]string
-	if err := json.Unmarshal(payload, &entities); err != nil {
+	if err := json.Unmarshal(lldJSON, &entities); err != nil {
 		return nil, fmt.Errorf("zabbixclient: parse discovery JSON for %q from %s: %w", discoveryKey, addr, err)
 	}
 	return entities, nil
