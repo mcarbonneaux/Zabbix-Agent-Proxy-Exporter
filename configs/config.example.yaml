@@ -64,23 +64,55 @@ modules:
         label_name: "interface"
         label_field: "{#IFNAME}"
 
-  # Example module for a legacy Zabbix agent (v1.8.x, pre-LLD) on Solaris,
-  # relying entirely on custom UserParameter keys defined in the agent's
-  # own config (see configs/zabbix_agentd.solaris.conf.example). Agents
-  # this old don't support native discovery keys (vfs.fs.discovery,
-  # net.if.discovery, ...); the custom "list" UserParameters in that
-  # example config (listif_solaris, listfs_solaris, listdisk_solaris)
-  # return a plain newline-separated list of names instead, which
-  # line_list_items turns into a presence (1) series per line/entity, each
-  # labeled with that line's text — there's no second UserParameter key
-  # per entity on this agent, so unlike discovered_items there's no value
-  # to query beyond presence.
+  # Example module for a legacy Zabbix agent (v1.8.5, pre-LLD) on Solaris.
+  # Verified against a real `zabbix_agentd -p` dump: this generation does
+  # have some useful native keys (system.uptime, system.cpu.num[online],
+  # system.cpu.load[all,avg1], system.swap.size[all,free], kernel.maxproc,
+  # vm.memory.size[free]), but no discovery keys (vfs.fs.discovery,
+  # net.if.discovery, ...) and no per-filesystem/per-interface native key
+  # beyond vfs.fs.size[/,free] for the root filesystem specifically — so
+  # filesystems, interfaces, and disks still rely on the custom "list"
+  # UserParameters defined in the agent's own config (see
+  # configs/zabbix_agentd.solaris.conf.example): listif_solaris,
+  # listfs_solaris, listdisk_solaris return a plain newline-separated list
+  # of names, which line_list_items turns into a presence (1) series per
+  # line/entity, each labeled with that line's text — there's no second
+  # UserParameter key per entity on this agent, so unlike discovered_items
+  # there's no value to query beyond presence.
   solaris:
     items:
       - key: "agent.ping"
         metric: "zabbix_agent_ping"
         type: gauge
         help: "Agent reachability (1=up)"
+      - key: "system.uptime"
+        metric: "zabbix_uptime_seconds"
+        type: gauge
+        help: "System uptime in seconds"
+      - key: "system.cpu.num[online]"
+        metric: "zabbix_cpu_count"
+        type: gauge
+        help: "Number of online CPUs"
+      - key: "system.cpu.load[all,avg1]"
+        metric: "zabbix_cpu_load1"
+        type: gauge
+        help: "CPU load average 1m"
+      - key: "system.swap.size[all,free]"
+        metric: "zabbix_swap_free_bytes"
+        type: gauge
+        help: "Free swap space in bytes"
+      - key: "kernel.maxproc"
+        metric: "zabbix_kernel_maxproc"
+        type: gauge
+        help: "Maximum number of processes the kernel can run"
+      - key: "vfs.fs.size[/,free]"
+        metric: "zabbix_fs_root_free_bytes"
+        type: gauge
+        help: "Free space on the root filesystem in bytes (native key, root only; see line_list_items below for all mountpoints' presence)"
+      - key: "vm.memory.size[free]"
+        metric: "zabbix_memory_free_bytes"
+        type: gauge
+        help: "Free memory in bytes (native key)"
       - key: "cpu.global"
         metric: "zabbix_cpu_usage_percent"
         type: gauge
@@ -101,6 +133,10 @@ modules:
         metric: "zabbix_tcp_ports_used"
         type: gauge
         help: "Number of established TCP connections (UserParameter: netstat -an -P tcp)"
+      - key: "num.con.if[]"
+        metric: "zabbix_net_connections"
+        type: gauge
+        help: "Number of network connections (UserParameter)"
     line_list_items:
       - key: "listfs_solaris"
         metric: "zabbix_fs_present"
